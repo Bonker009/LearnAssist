@@ -3,7 +3,9 @@
 import type {
   AuthResponse,
   ChatMessage,
+  Grade,
   LectureDocument,
+  Quiz,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
@@ -79,6 +81,17 @@ export const api = {
 
   getFileUrl: (id: string) =>
     request<{ url: string }>(`/api/documents/${id}/file`),
+
+  generateQuiz: (documentId: string, count = 5) =>
+    request<Quiz>(`/api/documents/${documentId}/quiz?count=${count}`, { method: "POST" }),
+
+  getQuiz: (quizId: string) => request<Quiz>(`/api/quizzes/${quizId}`),
+
+  submitQuiz: (quizId: string, answers: Record<string, number>) =>
+    request<Grade>(`/api/quizzes/${quizId}/submit`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
 
   getMessages: (id: string) => request<ChatMessage[]>(`/api/documents/${id}/messages`),
 

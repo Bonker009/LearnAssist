@@ -101,3 +101,41 @@ export const STAGE_LABELS: Record<IngestStage, string> = {
   DONE: "Ready",
   FAILED: "Failed",
 };
+
+// ---------- quizzes ----------
+
+/** A question as served before submission: deliberately no answer key. */
+export interface QuizQuestion {
+  id: string;
+  position: number;
+  question: string;
+  options: string[];
+  sourceLabel: string;
+}
+
+export interface Quiz {
+  id: string;
+  documentId: string;
+  createdAt: string;
+  questions: QuizQuestion[];
+}
+
+/** A question after grading, with the answer and its source revealed. */
+export interface GradedQuestion {
+  questionId: string;
+  position: number;
+  correct: boolean;
+  correctIndex: number;
+  chosenIndex: number | null;
+  explanation: string;
+  source: SourceRef;
+  sourceLabel: string;
+  snippet: string;
+}
+
+export interface Grade {
+  attemptId: string;
+  score: number;
+  total: number;
+  questions: GradedQuestion[];
+}

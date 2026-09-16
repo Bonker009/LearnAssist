@@ -52,6 +52,26 @@ public class AiClient {
         log.debug("Ingest queued for document {}", request.documentId());
     }
 
+    public record QuizRequest(UUID documentId, int count) {}
+
+    /** One generated question, including the answer key. */
+    public record GeneratedQuestion(
+            String question,
+            List<String> options,
+            int correctIndex,
+            String explanation,
+            Map<String, Object> source,
+            String sourceLabel,
+            String snippet) {}
+
+    public List<GeneratedQuestion> generateQuiz(QuizRequest request) {
+        return rest.post()
+                .uri("/quiz")
+                .body(request)
+                .retrieve()
+                .body(new org.springframework.core.ParameterizedTypeReference<>() {});
+    }
+
     public QueryResponse query(QueryRequest request) {
         return rest.post().uri("/query").body(request).retrieve().body(QueryResponse.class);
     }

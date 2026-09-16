@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import * as React from "react";
 import { AppShell } from "@/components/app-shell";
 import { AnswerWithCitations } from "@/components/citation";
+import { QuizPanel } from "@/components/quiz-panel";
 import { SourceViewer, type SourceViewerHandle } from "@/components/source-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,6 +137,8 @@ export default function DocumentPage() {
                 </CardContent>
               </Card>
             )}
+
+            <QuizPanel documentId={id} onNavigate={navigate} />
 
             <Card className="flex min-h-96 flex-col">
               <CardHeader>

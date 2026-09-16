@@ -21,7 +21,7 @@ built around.
 | 2 | PowerPoint and Word parsers | **Done** |
 | 3 | Audio/video via Whisper + FFmpeg | **Done** |
 | 4 | OCR fallback for scanned pages | **Done** |
-| 5 | Quiz generation | Not started |
+| 5 | Quiz generation | **Done** |
 | 6 | Caching, rate limiting, hardening | Not started |
 
 ---
@@ -166,6 +166,7 @@ ai/                 FastAPI, Python 3.12
   app/embeddings    EmbeddingProvider interface + Ollama impl
   app/llm           LLMProvider interface + Ollama impl
   app/rag           ingest, retrieve, prompts, citation resolution
+  app/quiz          stratified sampling, generation, validation
 web/                Next.js 16, Tailwind v4
   src/app/globals.css           three-layer design tokens
   src/components/citation.tsx   the signature UI primitive
@@ -204,3 +205,7 @@ it, so adding a new source kind is a change in one file.
   extend `ServiceRequest`, or it will 422.
 - **Re-ingesting deletes the document's chunks first.** Without that, a retry silently
   doubles every chunk in the index.
+- **The quiz answer key lives only in `GradeResponse`.** `QuestionResponse` has no
+  `correctIndex` or `explanation` field at all. That omission is the control:
+  suppressing the fields with `@JsonIgnore` on the entity would leave the answer key
+  one deleted annotation away from the browser.

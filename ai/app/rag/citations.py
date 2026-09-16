@@ -35,7 +35,7 @@ def resolve_citations(answer: str, blocks: dict[int, Chunk]) -> tuple[str, list[
                 marker=marker,
                 source=chunk.source,
                 label=chunk.source.label(),
-                snippet=_snippet(chunk.text),
+                snippet=snippet(chunk.text),
                 ocr=chunk.ocr,
             )
 
@@ -61,7 +61,8 @@ def is_grounded(answer: str, citations: list[Citation]) -> bool:
     return bool(citations)
 
 
-def _snippet(text: str, limit: int = 240) -> str:
+def snippet(text: str, limit: int = 240) -> str:
+    """Short excerpt shown under a citation or quiz answer."""
     collapsed = " ".join(text.split())
     if len(collapsed) <= limit:
         return collapsed

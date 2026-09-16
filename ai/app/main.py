@@ -10,7 +10,9 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import dispose_engine, session_scope
-from app.models import IngestRequest, QueryRequest, QueryResponse
+from app.models import IngestRequest, QueryRequest, QueryResponse, QuizRequest
+from app.quiz.generate import generate_quiz
+from app.quiz.models import QuizQuestion
 from app.rag.answer import answer_question
 from app.rag.ingest import run_ingest
 from app.storage import ensure_bucket
@@ -128,3 +130,19 @@ async def query(request: QueryRequest) -> QueryResponse:
     to the given document and nothing else.
     """
     return await answer_question(request)
+
+
+@app.post("/quiz", tags=["quiz"], dependencies=[Depends(require_internal_key)])
+async def quiz(request: QuizRequest) -> list[QuizQuestion]:
+    """Generate practice questions for one document.
+
+    Returns the correct answer and explanation; Spring Boot stores those and is
+    responsible for never serialising them to the browser before submission.
+    """
+    questions = await generate_quiz(request.document_id, request.count)
+    if not questions:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not generate questions from this document.",
+        )
+    return questions
