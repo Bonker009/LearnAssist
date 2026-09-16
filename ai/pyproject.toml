@@ -18,15 +18,13 @@ dependencies = [
     "python-pptx>=1.0",
     "python-docx>=1.2",
     "tiktoken>=0.12",
+    # Phase 3: speech-to-text. CPU int8 keeps an hour-long lecture tractable.
+    "faster-whisper>=1.2",
 ]
 
 [project.optional-dependencies]
-# Phase 3: speech-to-text. Heavy — installed in the image but pulled separately
-# so an image rebuild for Phase 1/2 work does not re-download CUDA wheels.
-media = [
-    "faster-whisper>=1.2",
-]
-# Phase 4: OCR fallback for scanned PDFs / image-only slides.
+# Phase 4: OCR fallback for scanned PDFs / image-only slides. Kept optional
+# because paddlepaddle is a large wheel that most ingests never need.
 ocr = [
     "paddleocr>=3.2",
     "paddlepaddle>=3.2",
@@ -49,3 +47,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: downloads model weights or runs inference; deselect with -m 'not slow'",
+]

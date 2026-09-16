@@ -9,8 +9,11 @@ one thing that has to stay reliable -- telling the student what is happening
 during a slow ingest.
 """
 
+import asyncio
 import json
 import logging
+import pathlib
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlalchemy import text
@@ -28,6 +31,7 @@ from app.parsers.pptx import PptxParser
 from app.rag.prompts import SUMMARY_SYSTEM, build_summary_prompt
 from app.rag.retrieve import delete_chunks, store_chunks
 from app.storage import download_bytes
+from app.transcribe.whisper import WhisperTranscriber
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,37 @@ async def _set_stage(document_id: UUID, stage: str, progress: int) -> None:
         )
 
 
+def _thread_safe_progress(
+    loop: asyncio.AbstractEventLoop, document_id: UUID
+) -> Callable[[float], None]:
+    """Build a progress callback safe to call from Whisper's worker thread.
+
+    Whisper runs in a thread (it is synchronous and CPU-bound), so there is no
+    running loop there and `create_task` would raise. The loop is captured on the
+    async side and the coroutine submitted across the boundary.
+
+    Updates are throttled to whole percent changes: Whisper emits a segment every
+    few seconds, and one UPDATE per segment would hammer Postgres for an hour with
+    no visible benefit. A dropped update is harmless -- the next supersedes it.
+    """
+    last = -1
+
+    def report(fraction: float) -> None:
+        nonlocal last
+        progress = 10 + int(min(max(fraction, 0.0), 1.0) * 50)
+        if progress == last:
+            return
+        last = progress
+        try:
+            asyncio.run_coroutine_threadsafe(
+                _set_stage(document_id, "TRANSCRIBING", progress), loop
+            )
+        except RuntimeError:
+            pass  # loop closed: ingest is already finishing
+
+    return report
+
+
 async def _fail(document_id: UUID, message: str) -> None:
     async with session_scope() as session:
         await session.execute(
@@ -64,6 +99,11 @@ async def _fail(document_id: UUID, message: str) -> None:
             text("UPDATE documents SET status = 'FAILED', updated_at = now() WHERE id = :id"),
             {"id": document_id},
         )
+
+
+def _is_media(content_type: str) -> bool:
+    normalised = content_type.lower().split(";")[0].strip()
+    return normalised.startswith(("audio/", "video/"))
 
 
 def _select_parser(content_type: str):
@@ -119,12 +159,42 @@ async def run_ingest(request: IngestRequest) -> None:
         await _set_stage(document_id, "PARSING", 5)
         data = await download_bytes(request.storage_key)
 
-        parser = _select_parser(request.content_type)
-        result = parser.parse(data)
+        if _is_media(request.content_type):
+            await _set_stage(document_id, "TRANSCRIBING", 10)
+            suffix = pathlib.Path(request.filename).suffix
+            # Transcription dominates the wall-clock time for a lecture recording,
+            # so it reports real progress across the 10-60% band rather than
+            # leaving the student watching a frozen bar for twenty minutes.
+            result = await WhisperTranscriber().parse(
+                data,
+                suffix=suffix,
+                on_progress=_thread_safe_progress(
+                    asyncio.get_running_loop(), document_id
+                ),
+            )
+        else:
+            parser = _select_parser(request.content_type)
+            result = parser.parse(data)
         logger.info(
             "Parsed %s: %d units (%d need OCR)",
             request.filename, len(result.units), len(result.units_needing_ocr),
         )
+
+        # Persist what parsing established before the slow stages run. Otherwise a
+        # failure at embedding discards the page count and duration the UI needs to
+        # describe the file at all.
+        async with session_scope() as session:
+            await session.execute(
+                text(
+                    "UPDATE documents SET unit_count = :unit_count, duration_sec = :duration, "
+                    "updated_at = now() WHERE id = :id"
+                ),
+                {
+                    "unit_count": result.unit_count,
+                    "duration": result.duration_sec,
+                    "id": document_id,
+                },
+            )
 
         await _set_stage(document_id, "CHUNKING", 25)
         items = chunk_units(document_id, result.units)
@@ -150,14 +220,9 @@ async def run_ingest(request: IngestRequest) -> None:
         async with session_scope() as session:
             await session.execute(
                 text(
-                    "UPDATE documents SET status = 'READY', unit_count = :unit_count, "
-                    "duration_sec = :duration, updated_at = now() WHERE id = :id"
+                    "UPDATE documents SET status = 'READY', updated_at = now() WHERE id = :id"
                 ),
-                {
-                    "unit_count": result.unit_count,
-                    "duration": result.duration_sec,
-                    "id": document_id,
-                },
+                {"id": document_id},
             )
             await session.execute(
                 text(

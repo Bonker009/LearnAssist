@@ -18,8 +18,8 @@ built around.
 | 0 | Compose stack, scaffolding | **Done** |
 | 1 | PDF → summary → cited Q&A | **Done** (needs Ollama to run end to end) |
 | 1b | Design system, citation UI | **Done** |
-| 2 | PowerPoint and Word parsers | Not started |
-| 3 | Audio/video via Whisper + FFmpeg | Not started |
+| 2 | PowerPoint and Word parsers | **Done** |
+| 3 | Audio/video via Whisper + FFmpeg | **Done** |
 | 4 | OCR fallback for scanned pages | Not started |
 | 5 | Quiz generation | Not started |
 | 6 | Caching, rate limiting, hardening | Not started |
@@ -138,6 +138,15 @@ The AI suite covers the three things that would silently break the product:
    slides must never be merged.
 3. **Fabricated citations** — a `[9]` the model invented must be stripped before it
    reaches the UI, because a citation chip implies the claim was verified.
+
+Media is covered end to end: FFmpeg extraction is asserted against real generated
+audio and video (mono, 16 kHz, temp files cleaned up), and one `slow` test
+synthesises speech with `espeak-ng`, transcribes it with Whisper and asserts the
+spoken terms come back with usable timestamps. Skip the heavy ones with
+`-m 'not slow'`.
+
+Whisper is configured by `WHISPER_MODEL` / `WHISPER_DEVICE` / `WHISPER_COMPUTE`.
+`tiny` makes local iteration much faster; `small` + `int8` is the CPU default.
 
 ---
 

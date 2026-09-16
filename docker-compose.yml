@@ -64,6 +64,11 @@ services:
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
       EMBED_DIM: ${EMBED_DIM:-1024}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-change-me}
+      # Whisper runs inside this container (unlike Ollama, which is external).
+      # int8 on CPU is what keeps an hour-long lecture tractable.
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE: ${WHISPER_COMPUTE:-int8}
     ports:
       - "${AI_PORT:-8000}:8000"
     extra_hosts:
