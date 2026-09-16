@@ -5,11 +5,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, status
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import dispose_engine, session_scope
+from app.models import IngestRequest, QueryRequest, QueryResponse
+from app.rag.answer import answer_question
+from app.rag.ingest import run_ingest
 from app.storage import ensure_bucket
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -99,3 +102,29 @@ async def readiness() -> dict:
 @app.get("/internal/ping", tags=["ops"], dependencies=[Depends(require_internal_key)])
 async def internal_ping() -> dict:
     return {"pong": True}
+
+
+@app.post(
+    "/ingest",
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["ingest"],
+    dependencies=[Depends(require_internal_key)],
+)
+async def ingest(request: IngestRequest, background: BackgroundTasks) -> dict:
+    """Queue ingestion and return immediately.
+
+    Parsing, transcription and embedding take minutes, not milliseconds. The caller
+    polls `ingest_jobs` for progress rather than holding a request open.
+    """
+    background.add_task(run_ingest, request)
+    return {"queued": True, "documentId": str(request.document_id)}
+
+
+@app.post("/query", tags=["rag"], dependencies=[Depends(require_internal_key)])
+async def query(request: QueryRequest) -> QueryResponse:
+    """Answer a question about one document.
+
+    Ownership was already enforced by Spring Boot; this service scopes retrieval
+    to the given document and nothing else.
+    """
+    return await answer_question(request)
