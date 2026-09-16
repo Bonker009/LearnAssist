@@ -1,0 +1,40 @@
+# Env
+.env
+.env.local
+*.local
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+next-env.d.ts
+
+# Java / Gradle
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Docker volume bind mounts
+.rustfs/
+
+# Local model / media scratch
+*.wav
+!ai/tests/fixtures/*.wav
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+desktop.ini

@@ -1,0 +1,51 @@
+[project]
+name = "learnassist-ai"
+version = "0.1.0"
+description = "Ingestion pipeline, RAG orchestration and quiz generation for the AI-Powered Learning Assistant"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.118",
+    "uvicorn[standard]>=0.37",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.11",
+    "sqlalchemy[asyncio]>=2.0.43",
+    "asyncpg>=0.30",
+    "pgvector>=0.4",
+    "httpx>=0.28",
+    "aioboto3>=15.5",
+    # Document parsing (Phase 1-2)
+    "pymupdf>=1.26",
+    "python-pptx>=1.0",
+    "python-docx>=1.2",
+    "tiktoken>=0.12",
+]
+
+[project.optional-dependencies]
+# Phase 3: speech-to-text. Heavy — installed in the image but pulled separately
+# so an image rebuild for Phase 1/2 work does not re-download CUDA wheels.
+media = [
+    "faster-whisper>=1.2",
+]
+# Phase 4: OCR fallback for scanned PDFs / image-only slides.
+ocr = [
+    "paddleocr>=3.2",
+    "paddlepaddle>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

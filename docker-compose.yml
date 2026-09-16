@@ -1,0 +1,122 @@
+# AI-Powered Learning Assistant — local development stack.
+#
+# NOTE: Ollama is deliberately NOT a service here. It runs natively on the host so it
+# can use the GPU; containers reach it at http://host.docker.internal:11434.
+# See README.md "Host prerequisites".
+
+name: learnassist
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-learnassist}
+      POSTGRES_USER: ${POSTGRES_USER:-learnassist}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-learnassist}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once on first init, before Flyway ever connects.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-learnassist} -d ${POSTGRES_DB:-learnassist}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      # Named volumes, not bind mounts: RustFS runs as uid 10001 and a Windows
+      # bind mount cannot be chown'd to it.
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000 -o /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  ai:
+    build:
+      context: ./ai
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-learnassist}:${POSTGRES_PASSWORD:-learnassist}@postgres:5432/${POSTGRES_DB:-learnassist}
+      S3_ENDPOINT: ${RUSTFS_ENDPOINT:-http://rustfs:9000}
+      S3_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      S3_BUCKET: ${RUSTFS_BUCKET:-lecture-uploads}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:7b-instruct}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      EMBED_DIM: ${EMBED_DIM:-768}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-change-me}
+    ports:
+      - "${AI_PORT:-8000}:8000"
+    extra_hosts:
+      # Makes host.docker.internal resolve on Linux hosts too.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    volumes:
+      # Hot reload during development.
+      - ./ai/app:/srv/app:ro
+      # Cache for whisper / OCR model weights so they survive rebuilds.
+      - model-cache:/root/.cache
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: ./api
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-learnassist}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-learnassist}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-learnassist}
+      APP_S3_ENDPOINT: ${RUSTFS_ENDPOINT:-http://rustfs:9000}
+      APP_S3_PUBLIC_ENDPOINT: ${RUSTFS_PUBLIC_ENDPOINT:-http://localhost:9000}
+      APP_S3_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      APP_S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      APP_S3_BUCKET: ${RUSTFS_BUCKET:-lecture-uploads}
+      APP_AI_BASE_URL: ${AI_BASE_URL:-http://ai:8000}
+      APP_AI_INTERNAL_KEY: ${INTERNAL_API_KEY:-dev-internal-key-change-me}
+      APP_JWT_SECRET: ${JWT_SECRET:-dev-only-secret-replace-with-openssl-rand-base64-48}
+      APP_JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-1440}
+      APP_CORS_ORIGIN: http://localhost:${WEB_PORT:-3000}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health -o /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+volumes:
+  postgres-data:
+  rustfs-data:
+  rustfs-logs:
+  model-cache:
