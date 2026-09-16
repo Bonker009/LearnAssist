@@ -24,6 +24,8 @@ from app.db import session_scope
 from app.embeddings.ollama import get_embedding_provider
 from app.llm.ollama import SummaryResult, get_llm_provider
 from app.models import IngestRequest
+from app.ocr.render import render_pdf_page
+from app.ocr.tesseract import get_ocr_provider
 from app.parsers.base import ParseResult
 from app.parsers.docx import DocxParser
 from app.parsers.pdf import PdfParser
@@ -99,6 +101,58 @@ async def _fail(document_id: UUID, message: str) -> None:
             text("UPDATE documents SET status = 'FAILED', updated_at = now() WHERE id = :id"),
             {"id": document_id},
         )
+
+
+async def _apply_ocr(document_id: UUID, data: bytes, result: ParseResult) -> int:
+    """Fill in units the parser flagged as scanned.
+
+    A page with no text layer would otherwise be silently absent from the index,
+    which makes "the lecture does not cover this" a false statement rather than an
+    honest one. Every recovered unit is marked `ocr=True` so the citation chip can
+    tell the student the text was machine-read and may contain errors.
+
+    @return the number of units recovered
+    """
+    pending = result.units_needing_ocr
+    if not pending:
+        return 0
+
+    provider = get_ocr_provider()
+    if not provider.available:
+        logger.warning(
+            "%d page(s) need OCR but tesseract is not installed; they stay unindexed",
+            len(pending),
+        )
+        return 0
+
+    await _set_stage(document_id, "OCR", 20)
+    recovered = 0
+
+    for index, unit in enumerate(pending):
+        page_no = unit.source.page_no or unit.source.slide_no
+        if page_no is None:
+            continue
+
+        image = await asyncio.to_thread(render_pdf_page, data, page_no)
+        if image is None:
+            continue
+
+        # Tesseract is a blocking subprocess; a scanned 60-page deck would pin the
+        # event loop for minutes if run inline.
+        text = await asyncio.to_thread(provider.read, image)
+        if text.strip():
+            unit.text = text
+            unit.ocr = True
+            unit.needs_ocr = False
+            recovered += 1
+
+        if pending:
+            await _set_stage(
+                document_id, "OCR", 20 + int((index + 1) / len(pending) * 5)
+            )
+
+    logger.info("OCR recovered %d of %d unreadable page(s)", recovered, len(pending))
+    return recovered
 
 
 def _is_media(content_type: str) -> bool:
@@ -180,6 +234,11 @@ async def run_ingest(request: IngestRequest) -> None:
             request.filename, len(result.units), len(result.units_needing_ocr),
         )
 
+        # Scanned pages carry no text layer; recover them before chunking so they
+        # are indexed like any other page.
+        if not _is_media(request.content_type):
+            await _apply_ocr(document_id, data, result)
+
         # Persist what parsing established before the slow stages run. Otherwise a
         # failure at embedding discards the page count and duration the UI needs to
         # describe the file at all.
@@ -199,10 +258,13 @@ async def run_ingest(request: IngestRequest) -> None:
         await _set_stage(document_id, "CHUNKING", 25)
         items = chunk_units(document_id, result.units)
         if not items:
-            raise ValueError(
-                "No readable text found. If this is a scanned PDF, OCR support is "
-                "required to index it."
-            )
+            unreadable = len(result.units_needing_ocr)
+            if unreadable:
+                raise ValueError(
+                    f"No readable text found. {unreadable} page(s) appear to be scanned "
+                    f"images and OCR could not read them."
+                )
+            raise ValueError("No readable text found in this file.")
 
         await _set_stage(document_id, "EMBEDDING", 40)
         embedder = get_embedding_provider()

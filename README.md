@@ -20,7 +20,7 @@ built around.
 | 1b | Design system, citation UI | **Done** |
 | 2 | PowerPoint and Word parsers | **Done** |
 | 3 | Audio/video via Whisper + FFmpeg | **Done** |
-| 4 | OCR fallback for scanned pages | Not started |
+| 4 | OCR fallback for scanned pages | **Done** |
 | 5 | Quiz generation | Not started |
 | 6 | Caching, rate limiting, hardening | Not started |
 
@@ -160,6 +160,8 @@ api/                Spring Boot 4.1, Java 25, JPA + Flyway
   .../web           controllers, DTOs, error handling
 ai/                 FastAPI, Python 3.12
   app/parsers       one parser per input format -> ParsedUnit
+  app/transcribe    ffmpeg extraction, Whisper, transcript windowing
+  app/ocr           fallback for pages with no text layer
   app/chunking      splitter; never crosses a source boundary
   app/embeddings    EmbeddingProvider interface + Ollama impl
   app/llm           LLMProvider interface + Ollama impl

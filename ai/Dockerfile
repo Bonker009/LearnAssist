@@ -1,10 +1,16 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
-# ffmpeg is needed from Phase 3 onward (audio extraction from video).
-# Installed now so the image is stable across phases.
+# ffmpeg        - audio extraction from media uploads (Phase 3)
+# tesseract-ocr - fallback for scanned pages with no text layer (Phase 4).
+#                 Chosen over PaddleOCR because paddlepaddle is a several-hundred-
+#                 megabyte wheel, and OCR is a path most ingests never take.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -16,10 +22,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/usr/local \
     PYTHONUNBUFFERED=1
 
-# Dependency layer: cached unless pyproject/lock changes.
-COPY pyproject.toml uv.lock* README.md ./
+# Dependency layer: cached unless pyproject.toml changes.
+COPY pyproject.toml README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --no-dev 2>/dev/null || uv pip install --system -r pyproject.toml
+    uv pip install --system -r pyproject.toml
 
 COPY app ./app
 
