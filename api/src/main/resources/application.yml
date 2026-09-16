@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: learnassist-api
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/learnassist}
+    username: ${SPRING_DATASOURCE_USERNAME:learnassist}
+    password: ${SPRING_DATASOURCE_PASSWORD:learnassist}
+
+  jpa:
+    # Flyway owns the schema. `validate` makes a drifted @Entity fail at boot
+    # instead of silently mutating the database.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # The `vector` extension is created by db/init/01_extensions.sql on first
+    # container init; V1 assumes it exists.
+    baseline-on-migrate: false
+
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 512MB
+
+server:
+  # 8081 by default: port 8080 on this machine is taken by an unrelated project's
+  # container. Inside compose SERVER_PORT is set back to 8080 and the host port is
+  # mapped from API_PORT, so 8081 is the address either way.
+  port: ${SERVER_PORT:8081}
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  cors-origin: ${APP_CORS_ORIGIN:http://localhost:3000}
+  jwt:
+    secret: ${APP_JWT_SECRET:dev-only-secret-replace-with-openssl-rand-base64-48}
+    expiry-minutes: ${APP_JWT_EXPIRY_MINUTES:1440}
+  s3:
+    # Server-side calls use the in-network endpoint...
+    endpoint: ${APP_S3_ENDPOINT:http://localhost:9000}
+    # ...but presigned URLs are opened by the browser, which cannot resolve
+    # `rustfs`. The signature is bound to the host, so presigning MUST use the
+    # public endpoint or every upload fails with SignatureDoesNotMatch.
+    public-endpoint: ${APP_S3_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${APP_S3_ACCESS_KEY:rustfsadmin}
+    secret-key: ${APP_S3_SECRET_KEY:rustfsadmin}
+    bucket: ${APP_S3_BUCKET:lecture-uploads}
+    region: ${APP_S3_REGION:us-east-1}
+    presign-expiry-minutes: 15
+    max-upload-bytes: 536870912
+  ai:
+    base-url: ${APP_AI_BASE_URL:http://localhost:8000}
+    internal-key: ${APP_AI_INTERNAL_KEY:dev-internal-key-change-me}
+    # Local 7B inference is slow; a tight timeout surfaces as a bogus failure.
+    timeout-seconds: 600
+
+logging:
+  level:
+    com.learnassist.api: DEBUG

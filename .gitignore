@@ -38,3 +38,4 @@ venv/
 *.iml
 Thumbs.db
 desktop.ini
+.scratch/

@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://learnassist:learnassist@localhost:5432/learnassist"
+    database_url: str = "postgresql+asyncpg://learnassist:learnassist@localhost:55432/learnassist"
 
     # RustFS / S3
     s3_endpoint: str = "http://localhost:9000"
