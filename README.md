@@ -22,7 +22,7 @@ built around.
 | 3 | Audio/video via Whisper + FFmpeg | **Done** |
 | 4 | OCR fallback for scanned pages | **Done** |
 | 5 | Quiz generation | **Done** |
-| 6 | Caching, rate limiting, hardening | Not started |
+| 6 | Caching, rate limiting, hardening | **Done** |
 
 ---
 
@@ -44,6 +44,8 @@ FastAPI :8000 ──────────────────────
   RustFS :9000       Ollama (host :11434)
   raw uploads        chat + embeddings
   console :9001
+  Redis :6381
+  answer cache
 ```
 
 **Service boundary.** Spring Boot owns users, documents, jobs and chat, via JPA, and
@@ -205,6 +207,12 @@ it, so adding a new source kind is a change in one file.
   extend `ServiceRequest`, or it will 422.
 - **Re-ingesting deletes the document's chunks first.** Without that, a retry silently
   doubles every chunk in the index.
+- **The answer cache is keyed by a per-document generation counter.** A re-ingest
+  bumps it, retiring every cached answer for that document at once. Without it, a
+  cached answer would go on citing chunks that no longer exist.
+- **The rate limiter is in-memory, so it is per-instance.** Correct at one replica,
+  wrong at two — a user would get double the budget. Move the counter to Redis
+  before scaling out.
 - **The quiz answer key lives only in `GradeResponse`.** `QuestionResponse` has no
   `correctIndex` or `explanation` field at all. That omission is the control:
   suppressing the fields with `@JsonIgnore` on the entity would leave the answer key

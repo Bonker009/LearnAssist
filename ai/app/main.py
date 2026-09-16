@@ -5,10 +5,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
 from sqlalchemy import text
 
 from app.config import get_settings
+from app import cache
 from app.db import dispose_engine, session_scope
 from app.models import IngestRequest, QueryRequest, QueryResponse, QuizRequest
 from app.quiz.generate import generate_quiz
@@ -17,7 +18,26 @@ from app.rag.answer import answer_question
 from app.rag.ingest import run_ingest
 from app.storage import ensure_bucket
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+import contextvars
+
+# Set per request from the X-Request-Id header Spring Boot forwards, so one user
+# action is traceable across both services' logs.
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+
+
+class RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(request_id)s] %(name)s %(message)s",
+)
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RequestIdFilter())
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +48,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001 - startup must not hard-fail on storage
         logger.warning("Could not ensure bucket at startup: %s", exc)
     yield
+    await cache.close()
     await dispose_engine()
 
 
@@ -37,6 +58,16 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def bind_request_id(request: Request, call_next):
+    incoming = request.headers.get("X-Request-Id", "")
+    request_id_var.set(incoming[:64] if incoming else "-")
+    response = await call_next(request)
+    if incoming:
+        response.headers["X-Request-Id"] = incoming[:64]
+    return response
 
 
 async def require_internal_key(x_internal_key: str = Header(default="")) -> None:
@@ -83,6 +114,10 @@ async def readiness() -> dict:
     except Exception as exc:  # noqa: BLE001
         checks["rustfs"] = f"error: {exc}"
 
+    # Redis is reported but never gates readiness: the cache is fail-open, so a
+    # missing Redis makes answers slow, not unavailable.
+    checks["redis"] = "ok" if await cache.ping() else "unavailable (answers will not be cached)"
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(f"{settings.ollama_base_url.rstrip('/')}/api/tags")
@@ -97,7 +132,8 @@ async def readiness() -> dict:
     except Exception as exc:  # noqa: BLE001
         checks["ollama"] = f"unreachable at {settings.ollama_base_url}: {exc}"
 
-    ready = all(v == "ok" for v in checks.values())
+    required = ("postgres", "rustfs", "ollama")
+    ready = all(checks[name] == "ok" for name in required)
     return {"ready": ready, "checks": checks}
 
 

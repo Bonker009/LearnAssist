@@ -18,6 +18,7 @@ from uuid import UUID
 
 from sqlalchemy import text
 
+from app import cache
 from app.chunking.splitter import chunk_units, count_tokens
 from app.config import get_settings
 from app.db import session_scope
@@ -275,6 +276,10 @@ async def run_ingest(request: IngestRequest) -> None:
             # otherwise a retry silently doubles every chunk.
             await delete_chunks(session, document_id)
             await store_chunks(session, document_id, items, vectors)
+
+        # Answers cached against the previous index cite chunks that no longer
+        # exist; bumping the generation retires all of them at once.
+        await cache.bump_generation(document_id)
 
         await _set_stage(document_id, "SUMMARIZING", 75)
         await _summarise(document_id, request.filename, result)

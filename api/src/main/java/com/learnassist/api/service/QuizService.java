@@ -9,6 +9,7 @@ import com.learnassist.api.domain.User;
 import com.learnassist.api.repository.QuizAttemptRepository;
 import com.learnassist.api.repository.QuizRepository;
 import com.learnassist.api.web.ApiException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,17 +24,28 @@ public class QuizService {
     private final QuizAttemptRepository attempts;
     private final DocumentService documents;
     private final AiClient ai;
+    private final RateLimiter rateLimiter;
+
+    private static final String QUIZ_BUCKET = "quiz";
+    private static final int QUIZ_LIMIT = 20;
+    private static final Duration QUIZ_WINDOW = Duration.ofHours(1);
 
     public QuizService(QuizRepository quizzes, QuizAttemptRepository attempts,
-            DocumentService documents, AiClient ai) {
+            DocumentService documents, AiClient ai, RateLimiter rateLimiter) {
         this.quizzes = quizzes;
         this.attempts = attempts;
         this.documents = documents;
         this.ai = ai;
+        this.rateLimiter = rateLimiter;
     }
 
     @Transactional
     public Quiz generate(User user, UUID documentId, int count) {
+        if (!rateLimiter.tryAcquire(QUIZ_BUCKET, user.getId(), QUIZ_LIMIT, QUIZ_WINDOW)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Too many quizzes generated in the last hour. Try again shortly.");
+        }
+
         Document document = documents.requireOwned(user, documentId);
         if (document.getStatus() != DocumentStatus.READY) {
             throw new ApiException(HttpStatus.CONFLICT,

@@ -2,6 +2,7 @@
 
 import logging
 
+from app import cache
 from app.db import session_scope
 from app.embeddings.ollama import get_embedding_provider
 from app.llm.ollama import get_llm_provider
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 async def answer_question(request: QueryRequest) -> QueryResponse:
+    cached = await cache.get_answer(request.document_id, request.question)
+    if cached is not None:
+        return QueryResponse.model_validate(cached)
+
     embedder = get_embedding_provider()
 
     async with session_scope() as session:
@@ -42,4 +47,9 @@ async def answer_question(request: QueryRequest) -> QueryResponse:
         logger.info("Ungrounded answer discarded for document %s", request.document_id)
         return QueryResponse(answer=NOT_COVERED, citations=[], grounded=False)
 
-    return QueryResponse(answer=answer, citations=citations, grounded=grounded)
+    response = QueryResponse(answer=answer, citations=citations, grounded=grounded)
+    # Only cache grounded answers. A refusal is often the result of a transient
+    # retrieval miss, and caching it would make a temporary failure permanent.
+    if grounded:
+        await cache.set_answer(request.document_id, request.question, response.model_dump())
+    return response

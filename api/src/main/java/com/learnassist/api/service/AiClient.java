@@ -33,6 +33,17 @@ public class AiClient {
         this.rest = RestClient.builder()
                 .baseUrl(props.ai().baseUrl())
                 .defaultHeader("X-Internal-Key", props.ai().internalKey())
+                // Carry the caller's request id across the service boundary so one
+                // user action is traceable through both logs.
+                .requestInterceptor((request, body, execution) -> {
+                    String requestId = org.slf4j.MDC.get(
+                            com.learnassist.api.web.RequestIdFilter.MDC_KEY);
+                    if (requestId != null) {
+                        request.getHeaders().add(
+                                com.learnassist.api.web.RequestIdFilter.HEADER, requestId);
+                    }
+                    return execution.execute(request, body);
+                })
                 .requestFactory(factory)
                 .build();
     }

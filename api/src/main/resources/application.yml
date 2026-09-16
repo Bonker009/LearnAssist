@@ -74,5 +74,8 @@ app:
     timeout-seconds: 600
 
 logging:
+  # %X{requestId} is populated by RequestIdFilter.
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{requestId:-}] %logger{36} - %msg%n"
   level:
     com.learnassist.api: DEBUG

@@ -13,6 +13,7 @@ import com.learnassist.api.repository.DocumentRepository;
 import com.learnassist.api.repository.IngestJobRepository;
 import com.learnassist.api.repository.SummaryRepository;
 import com.learnassist.api.web.ApiException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,17 +30,24 @@ public class DocumentService {
     private final ChatMessageRepository chats;
     private final StorageService storage;
     private final AiClient ai;
+    private final RateLimiter rateLimiter;
     private final AppProperties props;
+
+    /** Ingest is minutes of CPU per call, so the budget is deliberately small. */
+    private static final String INGEST_BUCKET = "ingest";
+    private static final int INGEST_LIMIT = 10;
+    private static final Duration INGEST_WINDOW = Duration.ofHours(1);
 
     public DocumentService(DocumentRepository documents, IngestJobRepository jobs,
             SummaryRepository summaries, ChatMessageRepository chats, StorageService storage,
-            AiClient ai, AppProperties props) {
+            AiClient ai, RateLimiter rateLimiter, AppProperties props) {
         this.documents = documents;
         this.jobs = jobs;
         this.summaries = summaries;
         this.chats = chats;
         this.storage = storage;
         this.ai = ai;
+        this.rateLimiter = rateLimiter;
         this.props = props;
     }
 
@@ -76,6 +84,15 @@ public class DocumentService {
      */
     @Transactional
     public Document confirmUploadAndIngest(User owner, UUID documentId) {
+        if (!rateLimiter.tryAcquire(INGEST_BUCKET, owner.getId(), INGEST_LIMIT, INGEST_WINDOW)) {
+            long retryAfter =
+                    rateLimiter.retryAfterSeconds(INGEST_BUCKET, owner.getId(), INGEST_WINDOW);
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,
+                    "You have started %d ingests in the last hour. Try again in %d minute(s)."
+                            .formatted(INGEST_LIMIT, Math.max(retryAfter / 60, 1)));
+        }
+        rateLimiter.evictExpired(INGEST_WINDOW);
+
         Document document = requireOwned(owner, documentId);
 
         long size = storage.uploadedSize(document.getStorageKey())
