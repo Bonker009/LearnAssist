@@ -22,7 +22,9 @@ from app.embeddings.ollama import get_embedding_provider
 from app.llm.ollama import SummaryResult, get_llm_provider
 from app.models import IngestRequest
 from app.parsers.base import ParseResult
+from app.parsers.docx import DocxParser
 from app.parsers.pdf import PdfParser
+from app.parsers.pptx import PptxParser
 from app.rag.prompts import SUMMARY_SYSTEM, build_summary_prompt
 from app.rag.retrieve import delete_chunks, store_chunks
 from app.storage import download_bytes
@@ -31,7 +33,11 @@ logger = logging.getLogger(__name__)
 
 # Content type -> parser. Phases 2 and 3 register pptx/docx/audio/video here;
 # nothing else in the pipeline changes.
-_PARSERS = {"application/pdf": PdfParser}
+_PARSERS = {
+    "application/pdf": PdfParser,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": PptxParser,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxParser,
+}
 
 
 async def _set_stage(document_id: UUID, stage: str, progress: int) -> None:

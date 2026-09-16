@@ -24,6 +24,7 @@ def _row_to_chunk(row) -> Chunk:
         ocr=row.ocr,
         source=SourceRef(
             kind=row.source_kind,
+            label_override=row.source_label,
             slide_no=row.slide_no,
             page_no=row.page_no,
             start_sec=row.start_sec,
@@ -47,6 +48,7 @@ async def store_chunks(
             "text": chunk.text,
             "section_title": chunk.section_title,
             "source_kind": chunk.source.kind,
+            "source_label": chunk.source.label_override,
             "slide_no": chunk.source.slide_no,
             "page_no": chunk.source.page_no,
             "start_sec": chunk.source.start_sec,

@@ -36,6 +36,8 @@ chunks = Table(
     Column("text", Text, nullable=False),
     Column("section_title", Text, nullable=True),
     Column("source_kind", String(16), nullable=False),
+    # Parser-supplied citation label; NULL means derive from source_kind.
+    Column("source_label", String(64), nullable=True),
     Column("slide_no", Integer, nullable=True),
     Column("page_no", Integer, nullable=True),
     Column("start_sec", Float, nullable=True),

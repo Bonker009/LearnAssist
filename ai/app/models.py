@@ -26,6 +26,9 @@ class SourceRef(BaseModel):
     page_no: int | None = None
     start_sec: float | None = None
     end_sec: float | None = None
+    # Set by parsers whose unit is not literally a page or slide (e.g. a Word
+    # heading section). None means derive the label from `kind`.
+    label_override: str | None = None
 
     @model_validator(mode="after")
     def _check_kind_fields(self) -> "SourceRef":
@@ -39,6 +42,8 @@ class SourceRef(BaseModel):
 
     def label(self) -> str:
         """Human-readable citation label, e.g. 'Slide 4' or '12:30'."""
+        if self.label_override:
+            return self.label_override
         if self.kind == "slide":
             return f"Slide {self.slide_no}"
         if self.kind == "page":
