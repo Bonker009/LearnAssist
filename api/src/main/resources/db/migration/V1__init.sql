@@ -2,7 +2,7 @@
 --
 -- Ownership rule: Spring Boot (JPA) is the only writer for every table here
 -- EXCEPT `chunks`, which is written solely by the FastAPI service. The
--- `embedding vector(768)` column is deliberately NOT mapped by any JPA entity —
+-- `embedding vector(1024)` column is deliberately NOT mapped by any JPA entity —
 -- Hibernate has no native pgvector type, and since Java never writes chunks the
 -- problem never arises. Do not add a Chunk @Entity without revisiting this.
 
@@ -64,7 +64,7 @@ CREATE TABLE chunks (
     start_sec     DOUBLE PRECISION,
     end_sec       DOUBLE PRECISION,
     ocr           BOOLEAN      NOT NULL DEFAULT FALSE,
-    embedding     VECTOR(768)  NOT NULL,
+    embedding     VECTOR(1024) NOT NULL,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT uq_chunks_document_ordinal UNIQUE (document_id, ordinal),
     -- A chunk is bound to exactly one addressing scheme. Enforcing this in the

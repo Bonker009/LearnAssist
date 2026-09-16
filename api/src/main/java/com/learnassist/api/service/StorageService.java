@@ -12,6 +12,8 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import jakarta.annotation.PostConstruct;
 
@@ -71,6 +73,26 @@ public class StorageService {
         return presigner.presignPutObject(PutObjectPresignRequest.builder()
                         .signatureDuration(props.s3().presignExpiry())
                         .putObjectRequest(put)
+                        .build())
+                .url()
+                .toString();
+    }
+
+    /**
+     * Presign a GET so the browser can display the original file.
+     *
+     * <p>Needed for citation navigation: a "Page 4" chip is only useful if the reader can
+     * actually be taken to page 4 of the source document.
+     */
+    public String presignDownload(String storageKey) {
+        GetObjectRequest get = GetObjectRequest.builder()
+                .bucket(props.s3().bucket())
+                .key(storageKey)
+                .build();
+
+        return presigner.presignGetObject(GetObjectPresignRequest.builder()
+                        .signatureDuration(props.s3().presignExpiry())
+                        .getObjectRequest(get)
                         .build())
                 .url()
                 .toString();

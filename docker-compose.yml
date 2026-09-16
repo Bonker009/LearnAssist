@@ -58,9 +58,9 @@ services:
       S3_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
       S3_BUCKET: ${RUSTFS_BUCKET:-lecture-uploads}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:7b-instruct}
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
-      EMBED_DIM: ${EMBED_DIM:-768}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen2.5:32b-instruct}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
+      EMBED_DIM: ${EMBED_DIM:-1024}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-dev-internal-key-change-me}
     ports:
       - "${AI_PORT:-8000}:8000"

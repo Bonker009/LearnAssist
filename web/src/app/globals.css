@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   LAYER 1 — PRIMITIVES
+   Raw scales. These carry no meaning and are never referenced by a component;
+   they exist so the semantic layer below has a fixed vocabulary to draw from.
+   ========================================================================= */
+:root {
+  /* Neutrals */
+  --slate-50:  oklch(0.984 0.003 247);
+  --slate-100: oklch(0.968 0.007 247);
+  --slate-200: oklch(0.929 0.013 255);
+  --slate-300: oklch(0.869 0.020 252);
+  --slate-400: oklch(0.704 0.036 257);
+  --slate-500: oklch(0.554 0.041 257);
+  --slate-600: oklch(0.446 0.037 257);
+  --slate-700: oklch(0.372 0.036 259);
+  --slate-800: oklch(0.279 0.037 260);
+  --slate-900: oklch(0.208 0.039 266);
+  --slate-950: oklch(0.129 0.038 265);
+
+  /* Brand — study/focus blue */
+  --indigo-100: oklch(0.930 0.034 273);
+  --indigo-300: oklch(0.785 0.104 274);
+  --indigo-500: oklch(0.585 0.203 277);
+  --indigo-600: oklch(0.511 0.226 277);
+  --indigo-700: oklch(0.457 0.207 277);
+  --indigo-950: oklch(0.257 0.090 281);
+
+  /* Citation — the product's signature element gets its own hue, deliberately
+     distinct from the brand so a source chip never reads as a generic button. */
+  --amber-100: oklch(0.962 0.059 95);
+  --amber-300: oklch(0.879 0.140 88);
+  --amber-500: oklch(0.769 0.161 70);
+  --amber-700: oklch(0.555 0.128 67);
+  --amber-950: oklch(0.279 0.077 69);
+
+  /* Status */
+  --green-100: oklch(0.962 0.044 157);
+  --green-600: oklch(0.627 0.170 149);
+  --green-950: oklch(0.266 0.065 153);
+  --red-100:   oklch(0.936 0.032 18);
+  --red-600:   oklch(0.577 0.245 27);
+  --red-950:   oklch(0.258 0.092 26);
+
+  /* Spacing — 4px base, modular. No arbitrary values anywhere in components. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  /* Type scale — 1.25 ratio off a 1rem base */
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.375rem;
+  --text-2xl:  1.75rem;
+  --text-3xl:  2.25rem;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --shadow-md: 0 4px 12px -2px oklch(0 0 0 / 0.08);
+}
+
+/* ============================================================================
+   LAYER 2 — SEMANTIC
+   What a colour MEANS. Components reference only these. A component reaching
+   past this layer to a primitive is a bug: it is the thing that makes a theme
+   change turn into a hundred-file edit.
+   ========================================================================= */
+:root {
+  --color-canvas:        var(--slate-50);
+  --color-surface:       #ffffff;
+  --color-surface-muted: var(--slate-100);
+  --color-border:        var(--slate-200);
+  --color-border-strong: var(--slate-300);
+
+  --color-text:         var(--slate-900);
+  --color-text-muted:   var(--slate-600);
+  --color-text-subtle:  var(--slate-500);
+  --color-text-inverse: #ffffff;
+
+  --color-primary:       var(--indigo-600);
+  --color-primary-hover: var(--indigo-700);
+  --color-primary-soft:  var(--indigo-100);
+  --color-primary-text:  var(--indigo-700);
+
+  /* Citation tokens: a source chip is a distinct affordance, not a link. */
+  --color-citation:        var(--amber-700);
+  --color-citation-bg:     var(--amber-100);
+  --color-citation-border: var(--amber-300);
+
+  --color-success:    var(--green-600);
+  --color-success-bg: var(--green-100);
+  --color-danger:     var(--red-600);
+  --color-danger-bg:  var(--red-100);
+
+  --color-focus: var(--indigo-500);
+
+  color-scheme: light;
+}
+
+/* Dark mode redefines the SAME semantic names. Components do not change, and no
+   `dark:` variant is scattered through the markup. */
+.dark {
+  --color-canvas:        var(--slate-950);
+  --color-surface:       var(--slate-900);
+  --color-surface-muted: var(--slate-800);
+  --color-border:        var(--slate-800);
+  --color-border-strong: var(--slate-700);
+
+  --color-text:         var(--slate-100);
+  --color-text-muted:   var(--slate-400);
+  --color-text-subtle:  var(--slate-500);
+  --color-text-inverse: var(--slate-950);
+
+  --color-primary:       var(--indigo-500);
+  --color-primary-hover: var(--indigo-300);
+  --color-primary-soft:  var(--indigo-950);
+  --color-primary-text:  var(--indigo-300);
+
+  --color-citation:        var(--amber-300);
+  --color-citation-bg:     var(--amber-950);
+  --color-citation-border: var(--amber-700);
+
+  --color-success:    oklch(0.723 0.170 149);
+  --color-success-bg: var(--green-950);
+  --color-danger:     oklch(0.704 0.191 22);
+  --color-danger-bg:  var(--red-950);
+
+  --color-focus: var(--indigo-300);
+
+  color-scheme: dark;
+}
+
+/* ============================================================================
+   LAYER 3 — COMPONENT TOKENS
+   ========================================================================= */
+:root {
+  --control-radius: var(--radius-md);
+  --control-height: 2.5rem;
+  --card-radius: var(--radius-lg);
+  --chip-radius: var(--radius-full);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+/* Expose the semantic layer to Tailwind utilities (bg-surface, text-muted, …) */
+@theme inline {
+  --color-canvas: var(--color-canvas);
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-text-inverse: var(--color-text-inverse);
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-primary-text: var(--color-primary-text);
+  --color-citation: var(--color-citation);
+  --color-citation-bg: var(--color-citation-bg);
+  --color-citation-border: var(--color-citation-border);
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-danger: var(--color-danger);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-focus: var(--color-focus);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ============================================================================
+   BASE
+   ========================================================================= */
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One focus treatment for everything. WCAG 2.2 requires focus to be visible;
+   relying on the browser default breaks as soon as a component sets outline:none. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}

@@ -58,6 +58,14 @@ public class DocumentController {
         return detail(documents.requireOwned(user, id));
     }
 
+    /** Presigned URL for the original file, so the viewer can show the cited page. */
+    @GetMapping("/{id}/file")
+    public java.util.Map<String, String> fileUrl(@PathVariable UUID id) {
+        User user = CurrentUser.require();
+        Document document = documents.requireOwned(user, id);
+        return java.util.Map.of("url", documents.downloadUrl(document));
+    }
+
     @GetMapping("/{id}/messages")
     public List<Dtos.ChatMessageResponse> messages(@PathVariable UUID id) {
         User user = CurrentUser.require();

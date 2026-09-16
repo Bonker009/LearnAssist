@@ -19,9 +19,9 @@ class Settings(BaseSettings):
 
     # Ollama (host-native)
     ollama_base_url: str = "http://host.docker.internal:11434"
-    ollama_chat_model: str = "qwen2.5:7b-instruct"
-    ollama_embed_model: str = "nomic-embed-text"
-    embed_dim: int = 768
+    ollama_chat_model: str = "qwen2.5:32b-instruct"
+    ollama_embed_model: str = "bge-m3"
+    embed_dim: int = 1024
 
     # Shared secret for Spring Boot -> FastAPI calls.
     internal_api_key: str = "dev-internal-key-change-me"

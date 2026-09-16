@@ -110,6 +110,10 @@ public class DocumentService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
     }
 
+    public String downloadUrl(Document document) {
+        return storage.presignDownload(document.getStorageKey());
+    }
+
     @Transactional(readOnly = true)
     public Optional<IngestJob> job(UUID documentId) {
         return jobs.findByDocumentId(documentId);
