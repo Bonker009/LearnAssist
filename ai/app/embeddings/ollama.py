@@ -8,6 +8,10 @@ from app.config import get_settings
 from app.embeddings.base import EmbeddingProvider
 
 
+class OllamaUnavailable(RuntimeError):
+    """Ollama is missing, unreachable, or lacks the configured model."""
+
+
 class OllamaEmbeddingProvider(EmbeddingProvider):
     def __init__(self) -> None:
         settings = get_settings()
@@ -25,11 +29,27 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 
     async def _embed_batch(self, client: httpx.AsyncClient, texts: list[str]) -> list[list[float]]:
         async with self._semaphore:
-            response = await client.post(
-                f"{self._base_url}/api/embed",
-                json={"model": self._model, "input": texts},
-            )
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    f"{self._base_url}/api/embed",
+                    json={"model": self._model, "input": texts},
+                )
+                response.raise_for_status()
+            except httpx.ConnectError as exc:
+                # By far the most common setup failure, and httpx's own message
+                # ("All connection attempts failed") gives the reader nothing to
+                # act on. Name the address and the fix instead.
+                raise OllamaUnavailable(
+                    f"Cannot reach Ollama at {self._base_url}. Start it on the host, or set "
+                    f"OLLAMA_BASE_URL if it runs elsewhere."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    raise OllamaUnavailable(
+                        f"Ollama has no model named '{self._model}'. "
+                        f"Run: ollama pull {self._model}"
+                    ) from exc
+                raise
             embeddings = response.json()["embeddings"]
 
         for vector in embeddings:

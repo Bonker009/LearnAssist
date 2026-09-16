@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -48,6 +49,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException e,
             HttpServletRequest req) {
         return body(HttpStatus.BAD_REQUEST, e.getMessage(), req);
+    }
+
+    /**
+     * The AI service answered, but rejected the request.
+     *
+     * <p>Handled separately from a connection failure: reporting a 4xx contract mismatch as
+     * "service unavailable" sends the reader to check whether the container is running, when
+     * the container is running fine and the request shape is wrong.
+     */
+    @ExceptionHandler(RestClientResponseException.class)
+    public ResponseEntity<Map<String, Object>> handleAiRejected(RestClientResponseException e,
+            HttpServletRequest req) {
+        log.error("AI service rejected the request: {} {}", e.getStatusCode(),
+                e.getResponseBodyAsString());
+        return body(HttpStatus.BAD_GATEWAY,
+                "The AI service rejected the request (" + e.getStatusCode() + "). "
+                        + "This usually means the two services disagree on the request format.",
+                req);
     }
 
     @ExceptionHandler(RestClientException.class)

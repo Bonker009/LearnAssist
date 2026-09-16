@@ -42,7 +42,9 @@ services:
       - rustfs-data:/data
       - rustfs-logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9000 -o /dev/null || exit 1"]
+      # No -f: an unauthenticated request to the S3 root correctly returns 403,
+      # and -f would treat that healthy response as a failure.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:9000 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

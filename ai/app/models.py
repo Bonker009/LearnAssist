@@ -9,7 +9,8 @@ produces these — nothing downstream changes.
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 SourceKind = Literal["slide", "page", "timestamp"]
 
@@ -81,14 +82,25 @@ class Citation(BaseModel):
     ocr: bool = False
 
 
-class IngestRequest(BaseModel):
+class ServiceRequest(BaseModel):
+    """Base for models Spring Boot posts to this service.
+
+    Jackson serialises Java records as camelCase, so the boundary accepts
+    camelCase aliases while the Python side stays snake_case. `populate_by_name`
+    keeps the snake_case spelling valid too, which is what the tests use.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class IngestRequest(ServiceRequest):
     document_id: UUID
     storage_key: str
     filename: str
     content_type: str
 
 
-class QueryRequest(BaseModel):
+class QueryRequest(ServiceRequest):
     document_id: UUID
     question: str = Field(min_length=1, max_length=2000)
 
