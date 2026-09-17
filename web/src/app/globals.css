@@ -441,6 +441,11 @@
   to { translate: -50% 0; }
 }
 
+@keyframes ai-float {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50%      { transform: translateY(-8px) scale(1.02); }
+}
+
 /* In the components layer, so Tailwind utilities on the same elements (absolute,
    inset-*, size-*) still win — an unlayered rule would override them. */
 @layer components {
@@ -449,6 +454,7 @@
     --ai-turn: 14s;
     --ai-breathe: 5s;
     isolation: isolate;
+    animation: ai-float 6s ease-in-out infinite;
   }
   .ai-orb[data-state="listening"] { --ai-turn: 7s; }
   .ai-orb[data-state="thinking"]  { --ai-turn: 2.8s; --ai-breathe: 1.6s; }
@@ -478,13 +484,14 @@
     filter: blur(22px);
     opacity: calc(0.45 + var(--ai-level) * 0.45);
     transform: scale(calc(1 + var(--ai-level) * 0.22));
+    box-shadow: 0 0 36px rgb(154 209 255 / 0.32), 0 0 64px rgb(255 146 173 / 0.22);
   }
 
   .ai-orb-body {
     inset: 10%;
     filter: blur(2px) saturate(1.1);
     transform: scale(calc(1 + var(--ai-level) * 0.12));
-    box-shadow: inset 0 0 24px rgb(255 255 255 / 0.25);
+    box-shadow: inset 0 0 24px rgb(255 255 255 / 0.25), 0 0 22px rgb(148 164 255 / 0.18);
   }
 
   /* Glassy highlight so the body reads as a soft sphere, not a flat disc. */
@@ -550,6 +557,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ai-orb,
   .ai-orb-bloom,
   .ai-orb-body,
   .ai-orb-sparkle,

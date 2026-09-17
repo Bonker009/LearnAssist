@@ -72,7 +72,7 @@ export function ChatSidebar({
         >
           <IconSchool size={17} stroke={1.75} />
         </span>
-        <span className="font-semibold tracking-tight">LearnAssist</span>
+        <span className="font-semibold tracking-tight">Trazyn</span>
       </div>
 
       <div className="px-2">

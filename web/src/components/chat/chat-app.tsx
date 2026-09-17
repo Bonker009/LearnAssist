@@ -454,12 +454,11 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
               />
               <div className="-mt-2 text-center">
                 {/* Bilingual title: Khmer display line, English subtitle in the accent. */}
-                <h2 lang="km" className="font-display-km text-balance text-2xl text-foreground">
-                  តើថ្ងៃនេះអ្នករៀនអ្វី?
-                </h2>
-                <p className="text-base font-semibold text-emphasis">
+                
+                <p className="mt-1 text-base font-semibold text-emphasis sm:text-lg">
                   What are you studying today?
                 </p>
+                
               </div>
               {composer}
               {error && (

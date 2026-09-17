@@ -219,9 +219,9 @@ export function Composer(props: ComposerProps) {
   const minutes = Math.floor(recorder.elapsed / 60);
   const seconds = String(recorder.elapsed % 60).padStart(2, "0");
   const hint = !documents.length
-    ? "Add a file, link or note to start asking questions"
+    ? "Add a file, link, or note to start asking questions."
     : !hasReady
-      ? "Your resources are still being processed…"
+      ? "Your materials are still being processed. You’ll be able to ask questions as soon as they’re ready."
       : null;
   const error = voiceError ?? recorder.error;
 
@@ -299,47 +299,61 @@ export function Composer(props: ComposerProps) {
 
         {recording || transcribing ? (
           <div
-            className="flex min-h-12 items-center gap-3 px-1"
+            className={cn(
+              "relative flex min-h-[88px] items-center gap-3 overflow-hidden rounded-2xl border px-3 py-2.5",
+              recording
+                ? "border-destructive/30 bg-gradient-to-r from-destructive/8 via-primary/8 to-primary/12"
+                : "border-primary/20 bg-gradient-to-r from-primary/10 via-primary/8 to-primary/12",
+            )}
             role="status"
             aria-live="polite"
           >
-            {recording ? (
-              <>
-                <span className="relative flex size-2.5 shrink-0">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive opacity-60" />
-                  <span className="relative inline-flex size-2.5 rounded-full bg-destructive" />
-                </span>
-                <span className="w-9 shrink-0 text-sm tabular-nums">
-                  {minutes}:{seconds}
-                </span>
-              </>
-            ) : (
-              <ShimmeringText
-                text="Transcribing…"
-                className="shrink-0 text-sm font-medium"
-                duration={1.6}
+            <div className="flex shrink-0 items-center gap-2.5">
+              {recording ? (
+                <>
+                  <span className="relative flex size-8 items-center justify-center rounded-full bg-destructive/12 ring-4 ring-destructive/10">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
+                    <span className="relative inline-flex size-3 rounded-full bg-destructive shadow-[0_0_18px_rgba(239,68,68,0.8)]" />
+                  </span>
+                  <span className="w-10 shrink-0 text-sm font-medium tabular-nums text-destructive">
+                    {minutes}:{seconds}
+                  </span>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 ring-4 ring-primary/10">
+                    <span className="size-2.5 rounded-full bg-primary animate-pulse" />
+                  </span>
+                  <ShimmeringText
+                    text="Transcribing…"
+                    className="shrink-0 text-sm font-medium"
+                    duration={1.6}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
+                <span>{recording ? "Listening" : "Processing"}</span>
+                {recording && <span className="text-destructive">LIVE</span>}
+              </div>
+              <LiveWaveform
+                active={recording}
+                processing={transcribing}
+                mode={recording ? "scrolling" : "static"}
+                height={48}
+                barWidth={5}
+                barGap={3}
+                barRadius={6}
+                fadeEdges
+                className={cn(
+                  "min-w-0 rounded-full text-primary shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)]",
+                  recording && "bg-gradient-to-r from-primary/5 via-primary/15 to-primary/10",
+                  !recording && "bg-gradient-to-r from-primary/8 via-primary/12 to-primary/8",
+                )}
               />
-            )}
-            {/* ElevenLabs UI LiveWaveform: live bars while recording, a travelling
-                wave while the clip is being transcribed. */}
-            <LiveWaveform
-              active={recording}
-              processing={transcribing}
-              mode={recording ? "scrolling" : "static"}
-              height={36}
-              barWidth={3}
-              barGap={2}
-              barRadius={3}
-              fadeEdges
-              // No barColor: a canvas cannot resolve var(); the waveform reads the
-              // computed text colour instead, so it follows the theme.
-              className="min-w-0 flex-1 text-primary"
-            />
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {recording
-                ? `Listening in ${LANGUAGES.find((l) => l.value === language)?.label}`
-                : ""}
-            </span>
+            </div>
           </div>
         ) : (
           <Textarea
@@ -471,7 +485,10 @@ export function Composer(props: ComposerProps) {
                     aria-label={
                       transcribing ? "Transcribing voice message" : "Record a voice message"
                     }
-                    className="rounded-md"
+                    className={cn(
+                      "rounded-md transition-all duration-200",
+                      recorder.state === "requesting" && "bg-primary/10 text-primary",
+                    )}
                     size="icon"
                     type="button"
                     variant="ghost"
@@ -483,7 +500,10 @@ export function Composer(props: ComposerProps) {
                     }}
                   >
                     {!transcribing && recorder.state !== "requesting" && (
-                      <IconMicrophone className="text-muted-foreground" size={19} stroke={1.6} />
+                      <span className="relative flex items-center justify-center">
+                        <span className="absolute inline-flex size-8 rounded-full bg-primary/10" />
+                        <IconMicrophone className="relative text-muted-foreground" size={19} stroke={1.6} />
+                      </span>
                     )}
                   </Button>
                 )}
