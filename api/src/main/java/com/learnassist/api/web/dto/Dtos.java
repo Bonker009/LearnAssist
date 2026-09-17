@@ -1,12 +1,14 @@
 package com.learnassist.api.web.dto;
 
 import com.learnassist.api.domain.ChatMessage;
+import com.learnassist.api.domain.Conversation;
 import com.learnassist.api.domain.Document;
 import com.learnassist.api.domain.IngestJob;
 import com.learnassist.api.domain.Summary;
 import com.learnassist.api.domain.User;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -39,10 +41,17 @@ public final class Dtos {
 
     // ---------- documents ----------
 
+    /** @param conversationId optional chat to attach the document to once created */
     public record CreateUploadRequest(
             @NotBlank @Size(max = 512) String filename,
             @NotBlank String contentType,
-            @Positive long sizeBytes) {}
+            @Positive long sizeBytes,
+            UUID conversationId) {}
+
+    /** A web page or YouTube link. */
+    public record CreateLinkRequest(
+            @NotBlank @Size(max = 2048) String url,
+            UUID conversationId) {}
 
     public record CreateUploadResponse(UUID documentId, String uploadUrl, String storageKey) {}
 
@@ -68,6 +77,7 @@ public final class Dtos {
             String filename,
             String docType,
             String status,
+            String sourceUrl,
             Integer unitCount,
             Double durationSec,
             long sizeBytes,
@@ -81,6 +91,7 @@ public final class Dtos {
                     document.getFilename(),
                     document.getDocType().name(),
                     document.getStatus().name(),
+                    document.getSourceUrl(),
                     document.getUnitCount(),
                     document.getDurationSec(),
                     document.getSizeBytes(),
@@ -89,6 +100,34 @@ public final class Dtos {
                     summary == null ? null : SummaryResponse.from(summary));
         }
     }
+
+    // ---------- conversations ----------
+
+    public record CreateConversationRequest(@Size(max = 200) String title) {}
+
+    public record RenameConversationRequest(@NotBlank @Size(max = 200) String title) {}
+
+    public record AttachDocumentRequest(@NotNull UUID documentId) {}
+
+    public record ConversationSummaryResponse(UUID id, String title, Instant createdAt,
+            Instant updatedAt) {
+        public static ConversationSummaryResponse from(Conversation conversation) {
+            return new ConversationSummaryResponse(conversation.getId(), conversation.getTitle(),
+                    conversation.getCreatedAt(), conversation.getUpdatedAt());
+        }
+    }
+
+    public record ConversationResponse(
+            UUID id,
+            String title,
+            Instant createdAt,
+            Instant updatedAt,
+            List<DocumentResponse> documents,
+            List<ChatMessageResponse> messages) {}
+
+    // ---------- speech ----------
+
+    public record TranscriptResponse(String text, String language, double durationSec) {}
 
     // ---------- chat ----------
 

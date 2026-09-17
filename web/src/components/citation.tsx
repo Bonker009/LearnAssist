@@ -25,13 +25,23 @@ function iconFor(source: SourceRef, ocr: boolean) {
   return FileText;
 }
 
+export type NavigateHandler = (source: SourceRef, documentId?: string | null) => void;
+
 export interface CitationProps {
   citation: CitationData;
-  onNavigate?: (source: SourceRef) => void;
+  onNavigate?: NavigateHandler;
+  /** Shown before the label when a chat has several resources, e.g. "notes.md · Section 2". */
+  documentName?: string;
   className?: string;
 }
 
-export function Citation({ citation, onNavigate, className }: CitationProps) {
+/** Keep a filename short enough that a chip still reads as a chip. */
+function shortName(name: string) {
+  const base = name.replace(/\.[a-z0-9]{2,5}$/i, "");
+  return base.length > 24 ? `${base.slice(0, 22)}…` : base;
+}
+
+export function Citation({ citation, onNavigate, documentName, className }: CitationProps) {
   const Icon = iconFor(citation.source, Boolean(citation.ocr));
   const interactive = Boolean(onNavigate);
 
@@ -41,7 +51,7 @@ export function Citation({ citation, onNavigate, className }: CitationProps) {
     <button
       type="button"
       disabled={!interactive}
-      onClick={() => onNavigate?.(citation.source)}
+      onClick={() => onNavigate?.(citation.source, citation.document_id)}
       aria-describedby={describedBy}
       title={citation.snippet}
       className={cn(
@@ -55,12 +65,16 @@ export function Citation({ citation, onNavigate, className }: CitationProps) {
       )}
     >
       <Icon aria-hidden className="size-3" />
+      {documentName && (
+        <span className="max-w-40 truncate opacity-80">{shortName(documentName)} ·</span>
+      )}
       {citation.label}
       {citation.ocr && <span className="sr-only">(text read by OCR)</span>}
       {/* The snippet is available to assistive tech, not just as a hover title,
           which a keyboard or touch user never sees. */}
       <span id={describedBy} className="sr-only">
-        Source: {citation.label}. {citation.snippet}
+        Source: {documentName ? `${documentName}, ` : ""}
+        {citation.label}. {citation.snippet}
       </span>
     </button>
   );
@@ -76,16 +90,21 @@ export function AnswerWithCitations({
   content,
   citations,
   onNavigate,
+  documentNames,
 }: {
   content: string;
   citations: CitationData[];
-  onNavigate?: (source: SourceRef) => void;
+  onNavigate?: NavigateHandler;
+  /** document id -> filename; names are only shown when the answer cites several files. */
+  documentNames?: Map<string, string>;
 }) {
   const byMarker = new Map(citations.map((c) => [c.marker, c]));
   const parts = content.split(/(\[\d{1,3}\])/g);
+  const cited = new Set(citations.map((c) => c.document_id).filter(Boolean));
+  const showNames = cited.size > 1;
 
   return (
-    <p className="text-base leading-relaxed text-text">
+    <p className="leading-relaxed whitespace-pre-wrap text-text">
       {parts.map((part, index) => {
         const match = /^\[(\d{1,3})\]$/.exec(part);
         if (!match) return <React.Fragment key={index}>{part}</React.Fragment>;
@@ -98,6 +117,11 @@ export function AnswerWithCitations({
             key={index}
             citation={citation}
             onNavigate={onNavigate}
+            documentName={
+              showNames && citation.document_id
+                ? documentNames?.get(citation.document_id)
+                : undefined
+            }
             className="mx-0.5"
           />
         );

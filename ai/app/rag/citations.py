@@ -9,11 +9,25 @@ being prevented by prompt wording alone.
 
 import re
 
+from app.lang import Language
 from app.models import Chunk, Citation
 
 _MARKER_RE = re.compile(r"\[(\d{1,3})\]")
 
-NOT_COVERED = "The lecture does not cover this."
+# The sentinel the model is told to emit, always in English whatever language it is
+# answering in. Detecting a refusal by matching a translated phrase would be
+# unreliable; matching one fixed sentence is not. The student sees the localised
+# message from `not_covered_message` instead.
+NOT_COVERED = "The materials do not cover this."
+
+_NOT_COVERED_MESSAGES: dict[Language, str] = {
+    "other": "Your attached materials don't cover this.",
+    "km": "ឯកសារដែលអ្នកបានភ្ជាប់ មិនបាននិយាយអំពីរឿងនេះទេ។",
+}
+
+
+def not_covered_message(language: Language) -> str:
+    return _NOT_COVERED_MESSAGES[language]
 
 
 def resolve_citations(answer: str, blocks: dict[int, Chunk]) -> tuple[str, list[Citation]]:
@@ -37,6 +51,7 @@ def resolve_citations(answer: str, blocks: dict[int, Chunk]) -> tuple[str, list[
                 label=chunk.source.label(),
                 snippet=snippet(chunk.text),
                 ocr=chunk.ocr,
+                document_id=chunk.document_id,
             )
 
     cleaned = answer

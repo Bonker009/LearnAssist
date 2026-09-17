@@ -5,17 +5,36 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from sqlalchemy import text
 
 from app.config import get_settings
 from app import cache
 from app.db import dispose_engine, session_scope
-from app.models import IngestRequest, QueryRequest, QueryResponse, QuizRequest
+from app.models import (
+    IngestRequest,
+    QueryRequest,
+    QueryResponse,
+    QuizRequest,
+    TranscriptResponse,
+)
 from app.quiz.generate import generate_quiz
 from app.quiz.models import QuizQuestion
 from app.rag.answer import answer_question
 from app.rag.ingest import run_ingest
+from app.transcribe.audio import FfmpegMissing
+from app.transcribe.whisper import join_segments, transcribe_clip
 from app.storage import ensure_bucket
 
 import contextvars
@@ -182,3 +201,56 @@ async def quiz(request: QuizRequest) -> list[QuizQuestion]:
             detail="Could not generate questions from this document.",
         )
     return questions
+
+
+# Dictation clips are seconds of Opus; this only bounds a malicious upload.
+_MAX_CLIP_BYTES = 25 * 1024 * 1024
+_CLIP_SUFFIXES = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+}
+
+
+@app.post(
+    "/transcribe",
+    tags=["speech"],
+    dependencies=[Depends(require_internal_key)],
+    response_model=TranscriptResponse,
+)
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str = Form("auto"),
+) -> TranscriptResponse:
+    """Transcribe a short voice message for the chat composer.
+
+    Synchronous, unlike ingest: the student is waiting on the text, and a clip is
+    seconds of audio, not an hour of lecture.
+    """
+    if language not in ("auto", "km", "en"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "language must be auto, km or en")
+
+    data = await file.read(_MAX_CLIP_BYTES + 1)
+    if len(data) > _MAX_CLIP_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Recording is too large")
+    if not data:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Recording is empty")
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    suffix = _CLIP_SUFFIXES.get(content_type, ".webm")
+
+    try:
+        transcript = await transcribe_clip(data, suffix, None if language == "auto" else language)
+    except FfmpegMissing as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    return TranscriptResponse(
+        text=join_segments(transcript.segments, transcript.language),
+        language=transcript.language,
+        duration_sec=round(transcript.duration, 2),
+    )

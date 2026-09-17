@@ -34,7 +34,13 @@ export function Input({ label, error, hint, className, id, ...props }: InputProp
         className={cn(
           "h-[var(--control-height)] rounded-[var(--control-radius)] border px-3",
           "bg-surface text-text placeholder:text-text-subtle",
-          error ? "border-danger" : "border-border",
+          "outline-none transition-[border-color,box-shadow] duration-150 ease-out",
+          "focus-visible:border-focus focus-visible:ring-3 focus-visible:ring-focus/40",
+          // Invalid: border and ring both carry the danger tint, and the message
+          // below says what is wrong, so colour is never the only signal.
+          error
+            ? "border-danger ring-3 ring-danger/20 focus-visible:border-danger focus-visible:ring-danger/30"
+            : "border-border-strong",
           className,
         )}
         {...props}

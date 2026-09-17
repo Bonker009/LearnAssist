@@ -5,11 +5,13 @@ FROM python:3.12-slim
 # tesseract-ocr - fallback for scanned pages with no text layer (Phase 4).
 #                 Chosen over PaddleOCR because paddlepaddle is a several-hundred-
 #                 megabyte wheel, and OCR is a path most ingests never take.
+#                 The Khmer pack reads photos of Khmer notes and scanned handouts.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         tesseract-ocr \
         tesseract-ocr-eng \
+        tesseract-ocr-khm \
         curl \
     && rm -rf /var/lib/apt/lists/*
 

@@ -49,3 +49,12 @@ async def ensure_bucket() -> None:
             await client.head_bucket(Bucket=settings.s3_bucket)
         except Exception:
             await client.create_bucket(Bucket=settings.s3_bucket)
+
+
+async def upload_bytes(storage_key: str, data: bytes, content_type: str) -> None:
+    """Write a derived artefact (a page snapshot, a reader outline) beside an upload."""
+    settings = get_settings()
+    async with s3_client() as client:
+        await client.put_object(
+            Bucket=settings.s3_bucket, Key=storage_key, Body=data, ContentType=content_type
+        )

@@ -59,7 +59,7 @@ export function QuizPanel({
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <CardTitle>Practice quiz</CardTitle>
         {phase !== "loading" && (
-          <Button variant="secondary" size="sm" onClick={generate}>
+          <Button variant="outline" size="sm" onClick={generate}>
             <RefreshCw aria-hidden className="size-3.5" />
             {phase === "idle" ? "Generate" : "New quiz"}
           </Button>

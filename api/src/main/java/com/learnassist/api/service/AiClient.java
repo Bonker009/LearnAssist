@@ -48,10 +48,20 @@ public class AiClient {
                 .build();
     }
 
+    /**
+     * @param storageKey null for a YouTube link
+     * @param sourceUrl  set for link resources; the AI service fetches it itself
+     */
     public record IngestRequest(UUID documentId, String storageKey, String filename,
-            String contentType) {}
+            String contentType, String docType, String sourceUrl) {}
 
-    public record QueryRequest(UUID documentId, String question) {}
+    /** A document the answer may cite. The filename lets the model say which file it used. */
+    public record DocumentRef(UUID id, String filename) {}
+
+    /** An earlier turn, sent so a follow-up like "explain that again" can be resolved. */
+    public record Turn(String role, String content) {}
+
+    public record QueryRequest(List<DocumentRef> documents, String question, List<Turn> history) {}
 
     public record QueryResponse(String answer, List<Map<String, Object>> citations,
             boolean grounded) {}
@@ -85,5 +95,36 @@ public class AiClient {
 
     public QueryResponse query(QueryRequest request) {
         return rest.post().uri("/query").body(request).retrieve().body(QueryResponse.class);
+    }
+
+    public record TranscriptResponse(String text, String language, double durationSec) {}
+
+    /**
+     * Transcribe a short dictation clip.
+     *
+     * @param language {@code km}, {@code en}, or {@code auto} to let Whisper detect it
+     */
+    public TranscriptResponse transcribe(byte[] audio, String filename, String contentType,
+            String language) {
+        var parts = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+        var headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.parseMediaType(contentType));
+        parts.add("file", new org.springframework.http.HttpEntity<>(
+                new org.springframework.core.io.ByteArrayResource(audio) {
+                    // Without a filename the part is sent as a plain form field and
+                    // FastAPI rejects it as "not a file".
+                    @Override
+                    public String getFilename() {
+                        return filename;
+                    }
+                }, headers));
+        parts.add("language", language);
+
+        return rest.post()
+                .uri("/transcribe")
+                .contentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA)
+                .body(parts)
+                .retrieve()
+                .body(TranscriptResponse.class);
     }
 }

@@ -85,6 +85,9 @@ class Citation(BaseModel):
     label: str
     snippet: str
     ocr: bool = False
+    # Which attached resource the citation points into. A chat can hold several, so
+    # "Page 4" alone would not say which file to open.
+    document_id: UUID | None = None
 
 
 class ServiceRequest(BaseModel):
@@ -100,9 +103,13 @@ class ServiceRequest(BaseModel):
 
 class IngestRequest(ServiceRequest):
     document_id: UUID
-    storage_key: str
+    # Null for a YouTube link, which is never stored.
+    storage_key: str | None = None
     filename: str
     content_type: str
+    doc_type: str | None = None
+    # Set for web page and YouTube resources.
+    source_url: str | None = None
 
 
 class QuizRequest(ServiceRequest):
@@ -110,9 +117,35 @@ class QuizRequest(ServiceRequest):
     count: int = Field(default=5, ge=1, le=20)
 
 
+class DocumentRef(ServiceRequest):
+    id: UUID
+    filename: str
+
+
+class Turn(ServiceRequest):
+    role: Literal["USER", "ASSISTANT"]
+    content: str = Field(max_length=16000)
+
+
 class QueryRequest(ServiceRequest):
-    document_id: UUID
+    """A question asked in a chat, answerable from that chat's resources only."""
+
+    documents: list[DocumentRef] = Field(min_length=1, max_length=100)
     question: str = Field(min_length=1, max_length=2000)
+    # Recent turns, oldest first. Used to resolve follow-ups, never as a source.
+    history: list[Turn] = Field(default_factory=list, max_length=20)
+
+    @property
+    def document_ids(self) -> list[UUID]:
+        return [d.id for d in self.documents]
+
+
+class TranscriptResponse(ServiceRequest):
+    """Serialised camelCase (FastAPI dumps by alias) to match the Java record."""
+
+    text: str
+    language: str
+    duration_sec: float
 
 
 class QueryResponse(BaseModel):

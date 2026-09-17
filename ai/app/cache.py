@@ -60,40 +60,50 @@ async def bump_generation(document_id: UUID) -> None:
         logger.debug("Could not bump cache generation: %s", exc)
 
 
-async def get_answer(document_id: UUID, question: str) -> dict[str, Any] | None:
+async def get_answer(document_ids: list[UUID], question: str) -> dict[str, Any] | None:
     client = _get_client()
     if client is None:
         return None
     try:
-        key = await _answer_key(document_id, question)
+        key = await _answer_key(document_ids, question)
         raw = await client.get(key)
         if raw:
-            logger.debug("Answer cache hit for document %s", document_id)
+            logger.debug("Answer cache hit for documents %s", document_ids)
             return json.loads(raw)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Answer cache read failed: %s", exc)
     return None
 
 
-async def set_answer(document_id: UUID, question: str, payload: dict[str, Any]) -> None:
+async def set_answer(
+    document_ids: list[UUID], question: str, payload: dict[str, Any]
+) -> None:
     client = _get_client()
     if client is None:
         return
     try:
         ttl = int(os.getenv("ANSWER_CACHE_TTL_SECONDS", "86400"))
-        key = await _answer_key(document_id, question)
+        key = await _answer_key(document_ids, question)
         await client.set(key, json.dumps(payload), ex=ttl)
     except Exception as exc:  # noqa: BLE001
         logger.debug("Answer cache write failed: %s", exc)
 
 
-async def _answer_key(document_id: UUID, question: str) -> str:
-    generation = await _generation(document_id)
+async def _answer_key(document_ids: list[UUID], question: str) -> str:
+    """Key over the exact resource set, each at its current generation.
+
+    Sorted, so attaching the same files in a different order shares answers. Every
+    document's generation is included, so re-ingesting any one of them retires
+    answers that might cite it.
+    """
+    scope = []
+    for document_id in sorted({str(d) for d in document_ids}):
+        scope.append(f"{document_id}@{await _generation(UUID(document_id))}")
     # Normalised so trailing whitespace and capitalisation do not split the cache
     # across what is really the same question.
     normalised = " ".join(question.lower().split())
-    digest = hashlib.sha256(normalised.encode()).hexdigest()[:32]
-    return f"answer:{document_id}:{generation}:{digest}"
+    digest = hashlib.sha256(("|".join(scope) + "\n" + normalised).encode()).hexdigest()[:40]
+    return f"answer:v2:{digest}"
 
 
 async def ping() -> bool:

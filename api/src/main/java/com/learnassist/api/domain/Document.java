@@ -37,8 +37,13 @@ public class Document {
     @Column(name = "doc_type", nullable = false, length = 16)
     private DocType docType;
 
-    @Column(name = "storage_key", nullable = false)
+    /** Null only for YouTube links, whose media is embedded rather than stored. */
+    @Column(name = "storage_key")
     private String storageKey;
+
+    /** The original URL for a web page or YouTube resource; null for uploads. */
+    @Column(name = "source_url", length = 2048)
+    private String sourceUrl;
 
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
@@ -75,6 +80,16 @@ public class Document {
         this.storageKey = storageKey;
     }
 
+    /** A resource added by link rather than by upload. */
+    public static Document fromLink(User owner, String sourceUrl, String contentType,
+            DocType docType, String storageKey) {
+        // The URL stands in as the name until ingestion reads the page or video title.
+        String name = sourceUrl.length() > 512 ? sourceUrl.substring(0, 512) : sourceUrl;
+        Document document = new Document(owner, name, contentType, docType, storageKey);
+        document.sourceUrl = sourceUrl;
+        return document;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -97,6 +112,10 @@ public class Document {
 
     public String getStorageKey() {
         return storageKey;
+    }
+
+    public String getSourceUrl() {
+        return sourceUrl;
     }
 
     public long getSizeBytes() {

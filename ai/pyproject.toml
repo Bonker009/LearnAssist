@@ -21,6 +21,12 @@ dependencies = [
     "redis>=6.4",
     # Phase 3: speech-to-text. CPU int8 keeps an hour-long lecture tractable.
     "faster-whisper>=1.2",
+    # Chat resources: voice-message uploads (FastAPI Form/File needs it), article
+    # extraction for web links, and audio download for YouTube links. yt-dlp tracks
+    # YouTube's frequent changes; if links start failing, upgrading it is the fix.
+    "python-multipart>=0.0.20",
+    "trafilatura>=2.0",
+    "yt-dlp>=2025.9.26",
 ]
 
 [project.optional-dependencies]

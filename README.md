@@ -23,6 +23,7 @@ built around.
 | 4 | OCR fallback for scanned pages | **Done** |
 | 5 | Quiz generation | **Done** |
 | 6 | Caching, rate limiting, hardening | **Done** |
+| 7 | Chat interface, links/images/notes, Khmer voice input | **Done** (needs Docker to run end to end) |
 
 ---
 
@@ -172,6 +173,8 @@ ai/                 FastAPI, Python 3.12
 web/                Next.js 16, Tailwind v4
   src/app/globals.css           three-layer design tokens
   src/components/citation.tsx   the signature UI primitive
+  src/components/chat/          chat screen: sidebar, composer, messages, resource panel
+  src/hooks/use-voice-recorder  MediaRecorder capture for voice messages
 ```
 
 ---
@@ -185,16 +188,125 @@ Tokens are three-layer, in `web/src/app/globals.css`:
 
 Components reference *semantic* tokens only. Dark mode redefines the same semantic
 names under `.dark`, so no `dark:` variants are scattered through the markup and a
-theme change stays a one-file edit.
+theme change stays a one-file edit. shadcn's token names (`--background`,
+`--muted-foreground`, …) are aliases of the semantic layer.
+
+**Visual language**
+
+- **Colour:** brand blue `#00518D` (`--color-primary`) for primary actions, links and
+  key marks; accent red `#EA1D24` (`--color-emphasis`) for strong secondary emphasis
+  such as the English line under a Khmer title. Cool blue-gray neutrals. Success is
+  green and warning orange, so neither reads as brand or accent. `--color-chart-1…5`
+  (blue, teal, amber, violet, rose) are for data.
+- **Type:** Plus Jakarta Sans for Latin; Kantumruy Pro for Khmer text (applied
+  automatically to anything with `lang="km"`); Dangrek for Khmer display titles
+  (`font-display-km`). Bilingual titles put the Khmer line first and the English line
+  smaller, in the accent.
+- **Shape and size:** radius sm 6 / md 8 / lg 10 / xl 14 px; controls xs 24 / sm 32 /
+  default 36 / lg 40 px. Only a single primary call to action (send) is fully round.
+- **Surfaces:** canvas → cards (`shadow-sm`) → floating menus and dialogs
+  (`shadow-lg`). Shadows are soft and low.
+- **Motion and feedback:** 150–250 ms, ease-out, no bounce; skeletons pulse; focus is
+  a soft ring in the theme's ring colour; invalid fields tint border and ring and
+  carry an icon and message.
+- **Micro-labels** (`micro-label`): uppercase, slightly tracked. Numbers in status
+  lines use tabular figures.
+
+**Components from community registries.** Besides official shadcn primitives: the
+chat composer adapts blocks.so `ai-01`/`ai-04`; voice input uses ElevenLabs UI
+`LiveWaveform` and `ShimmeringText` (installed from the raw GitHub registry JSON, since
+ui.elevenlabs.io blocks CLI requests); the dashboard uses Magic UI `MagicCard`,
+`NumberTicker` and `BorderBeam` with shadcn `chart` (Recharts).
+
+**AI presence** (`components/ai-orb.tsx`, styles under "AI presence" in
+`globals.css`): a soft glow in brand tints with a sparkle, plus flowing waves on the
+welcome screen. It breathes when idle, swells with the microphone level while
+listening, and turns faster while transcribing or answering. It is CSS only — an
+earlier WebGL orb looked harsh and pulled in three.js — and it stops moving for
+reduced-motion users.
 
 `<Citation>` is the product's signature element: one component renders a slide, page
-or timestamp chip from a `SourceRef` and drives the source viewer (jumping a PDF to
-the page, seeking a recording to the second). Every surface that shows a source uses
-it, so adding a new source kind is a change in one file.
+or timestamp chip from a `SourceRef` and drives the source viewer. It keeps its own
+amber hue, distinct from both brand colours, so a source never reads as a button or
+an alert.
+
+> Base rules in `globals.css` live in `@layer base`. An unlayered rule beats every
+> Tailwind utility, which is how `* { border-color }` once gave every ghost button a
+> visible border. Global font stacks are written out rather than using
+> `var(--font-sans)`, because `@theme inline` does not emit theme values as CSS
+> variables.
+
+---
+
+## Chat interface
+
+The app is a chat. Each chat holds **resources** (uploaded files, web pages, YouTube
+videos, photos, pasted notes) and answers only from those, citing the file *and* the
+page, slide, section or timestamp. A resource can be reused in other chats from the
+library without being processed again.
+
+| Resource | How it is read | Citation lands on |
+|---|---|---|
+| PDF | PyMuPDF, OCR fallback | the page, in the browser's PDF viewer |
+| PowerPoint / Word | python-pptx / python-docx | the slide or section, in the text reader |
+| Audio / video | FFmpeg + Whisper | the timestamp, in the player |
+| YouTube link | yt-dlp (audio only, never stored) + Whisper | the timestamp, in the embedded video |
+| Web page link | safe fetch + trafilatura, HTML snapshot kept | the section, in the text reader |
+| Photo / screenshot | Tesseract (`eng+khm`) | the image and its OCR text |
+| Pasted notes, .txt, .md | split by Markdown heading or paragraph | the section, in the text reader |
+
+The composer is adapted from the blocks.so shadcn blocks `ai-04` (attachments, +
+menu, drop zone) and `ai-01` (voice input), in `web/src/components/chat/composer.tsx`.
+shadcn primitives live in `components/ui`; their token names (`--background`,
+`--muted-foreground`, …) are aliases of the semantic layer in `globals.css`, so they
+follow the design system and dark mode without a second palette.
+
+### Dashboard
+
+`/dashboard` shows study activity from `GET /api/dashboard?tz=<IANA zone>`: totals,
+a 30-day activity chart, resource mix, quiz score trend, most-cited resources (read
+from the stored citation JSON), recent chats, a study streak and anything still
+processing. Days are bucketed in the student's time zone. Every query is scoped by
+owner in its own `WHERE`, including the citation join, so an aggregate never counts
+another student's rows.
+
+### Khmer
+
+- **Voice input.** The mic records in the browser and sends the clip to
+  `POST /api/speech/transcribe`, which runs Whisper in the AI container. The composer
+  has a ខ្មែរ / EN / Auto switch; with ខ្មែរ, `WHISPER_MODEL_KM`
+  ([PhanithLIM/whisper-small-khmer-ct2](https://huggingface.co/PhanithLIM/whisper-small-khmer-ct2),
+  ~8.9% CER on FLEURS) is used instead of the stock model, which handles Khmer poorly.
+  The browser Web Speech API was not used: its Khmer support is Chrome-only and
+  sends audio to Google.
+- **Khmer recordings** are detected by the base model and re-transcribed with the
+  Khmer model automatically.
+- **Replies** come back in Khmer when the question is in Khmer (detected from the
+  script, not a model). The refusal sentence is emitted in English by the model and
+  localised in code, so "not covered" is still detected reliably.
+  `qwen2.5:32b-instruct` writes serviceable but stiff Khmer; a stronger multilingual
+  chat model can be swapped in with `OLLAMA_CHAT_MODEL`.
+- **Chunking** splits Khmer on ។/៕ and never cuts inside a consonant cluster, since
+  Khmer has no spaces between words.
+
+The first Khmer voice message downloads the Khmer model (~250 MB) into the
+`model-cache` volume, so it is slow once.
 
 ---
 
 ## Things worth knowing before changing something
+
+- **Link fetching is an SSRF surface.** The AI service fetches student-supplied URLs
+  from inside the compose network, one hop from Postgres, RustFS and host Ollama.
+  `app/fetch.py` resolves the host, refuses any non-public address, connects to the
+  *checked* IP (with SNI set to the hostname, so TLS still verifies), and re-checks
+  every redirect. Don't replace it with a plain `httpx.get(url)`.
+- **YouTube downloads rebuild the URL from the video id.** Passing the student's URL
+  to yt-dlp would let its generic extractor fetch arbitrary hosts. If YouTube links
+  start failing, upgrade `yt-dlp` — YouTube changes frequently.
+- **Only a chat's first question is answer-cached.** With history, the same words
+  can mean something else. The key covers the exact set of attached resources at
+  their current generations.
 
 - **Presigned URLs are signed against a different endpoint than server-side calls.**
   The browser cannot resolve `rustfs`, and an S3 signature covers the Host header, so

@@ -18,7 +18,8 @@ TARGET_WINDOW_SEC = 45.0
 # A window is allowed to overrun the target to reach a sentence boundary, but not
 # without limit -- otherwise an unpunctuated monologue becomes one huge unit.
 MAX_WINDOW_SEC = 75.0
-_SENTENCE_ENDINGS = (".", "!", "?", "。", "？", "！")
+# ។ (khan) and ៕ (bariyoosan) end sentences in Khmer.
+_SENTENCE_ENDINGS = (".", "!", "?", "。", "？", "！", "។", "៕")
 
 
 @dataclass

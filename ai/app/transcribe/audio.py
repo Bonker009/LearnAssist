@@ -30,9 +30,25 @@ async def extract_audio(data: bytes, suffix: str = "") -> tuple[Path, float]:
         )
 
     source = Path(tempfile.mkstemp(suffix=suffix or ".bin")[1])
-    target = Path(tempfile.mkstemp(suffix=".wav")[1])
     source.write_bytes(data)
+    try:
+        return await extract_audio_from_path(source)
+    finally:
+        source.unlink(missing_ok=True)
 
+
+async def extract_audio_from_path(source: Path) -> tuple[Path, float]:
+    """As `extract_audio`, for media already on disk (e.g. a downloaded video).
+
+    The caller still owns `source`; only the returned WAV is created here.
+    """
+    if shutil.which("ffmpeg") is None:
+        raise FfmpegMissing(
+            "ffmpeg is not installed in this container. It is required to read "
+            "audio and video uploads."
+        )
+
+    target = Path(tempfile.mkstemp(suffix=".wav")[1])
     try:
         process = await asyncio.create_subprocess_exec(
             "ffmpeg", "-nostdin", "-y", "-i", str(source), *FFMPEG_ARGS, str(target),
@@ -47,8 +63,9 @@ async def extract_audio(data: bytes, suffix: str = "") -> tuple[Path, float]:
             raise ValueError("Could not read this media file: " + " ".join(tail))
 
         return target, await probe_duration(target)
-    finally:
-        source.unlink(missing_ok=True)
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
 
 
 async def probe_duration(path: Path) -> float:

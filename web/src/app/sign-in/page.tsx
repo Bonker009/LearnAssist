@@ -41,8 +41,17 @@ export default function SignInPage() {
     <div className="flex min-h-dvh items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <GraduationCap aria-hidden className="size-8 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight">LearnAssist</h1>
+          <span
+            aria-hidden
+            className="mb-1 flex size-11 items-center justify-center rounded-lg bg-primary text-text-inverse shadow-sm"
+          >
+            <GraduationCap className="size-6" strokeWidth={1.75} />
+          </span>
+          {/* Bilingual title: Khmer display line, English subtitle in the accent. */}
+          <h1 lang="km" className="font-display-km text-2xl text-text">
+            ជំនួយការសិក្សា
+          </h1>
+          <p className="-mt-1 text-base font-semibold text-emphasis">LearnAssist</p>
           <p className="text-sm text-text-muted">
             Study from your lectures, with every answer showing its source.
           </p>
@@ -85,7 +94,7 @@ export default function SignInPage() {
                 </p>
               )}
 
-              <Button type="submit" loading={busy}>
+              <Button type="submit" size="lg" loading={busy}>
                 {mode === "in" ? "Sign in" : "Create account"}
               </Button>
             </form>

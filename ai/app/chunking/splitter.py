@@ -19,11 +19,41 @@ from app.parsers.base import ParsedUnit
 # used for budgeting, not for actually tokenising model input.
 _encoding = tiktoken.get_encoding("cl100k_base")
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# Latin punctuation needs following whitespace (so "3.5" and "e.g." survive). The
+# Khmer khan ។ and bariyoosan ៕ are unambiguous and are often written with no space
+# after them, so they split with or without one.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[។៕])\s*")
 
 
 def count_tokens(text: str) -> int:
     return len(_encoding.encode(text))
+
+
+def _hard_split_word(word: str, max_tokens: int) -> list[str]:
+    """Cut a single space-free run into pieces under the token budget.
+
+    Cuts land before a base character, never before a combining mark, so a Khmer
+    consonant is not separated from its vowel sign or subscript.
+    """
+    if count_tokens(word) <= max_tokens:
+        return [word]
+
+    import unicodedata
+
+    # Khmer tokenises at several tokens per character; estimate the step from this
+    # word's own ratio and leave headroom rather than binary-searching every piece.
+    step = max(1, int(len(word) * max_tokens / count_tokens(word) * 0.9))
+    pieces: list[str] = []
+    start = 0
+    while start < len(word):
+        end = min(start + step, len(word))
+        while end < len(word) and end > start + 1 and (
+            unicodedata.category(word[end]).startswith("M") or word[end - 1] == "្"
+        ):
+            end -= 1
+        pieces.append(word[start:end])
+        start = end
+    return pieces
 
 
 def _split_long_text(text: str, max_tokens: int, overlap_tokens: int) -> list[str]:
@@ -50,13 +80,19 @@ def _split_long_text(text: str, max_tokens: int, overlap_tokens: int) -> list[st
             if current:
                 parts.append(" ".join(current))
                 current, current_tokens = [], 0
-            words = sentence.split()
+            # Khmer writes words without spaces, so one "word" here can be a whole
+            # paragraph; cut those by characters rather than emit them oversized.
+            words = [piece for word in sentence.split()
+                     for piece in _hard_split_word(word, max_tokens)]
             buffer: list[str] = []
             for word in words:
-                buffer.append(word)
-                if count_tokens(" ".join(buffer)) >= max_tokens:
+                # Flush before adding a word that would overflow, not after: with
+                # near-budget pieces, flushing after appending emits two of them
+                # together at twice the budget.
+                if buffer and count_tokens(" ".join([*buffer, word])) > max_tokens:
                     parts.append(" ".join(buffer))
                     buffer = []
+                buffer.append(word)
             if buffer:
                 current, current_tokens = [" ".join(buffer)], count_tokens(" ".join(buffer))
             continue

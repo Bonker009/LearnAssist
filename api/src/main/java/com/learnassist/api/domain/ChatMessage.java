@@ -32,8 +32,8 @@ public class ChatMessage {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "document_id", nullable = false)
-    private Document document;
+    @JoinColumn(name = "conversation_id", nullable = false)
+    private Conversation conversation;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
@@ -65,9 +65,9 @@ public class ChatMessage {
         // JPA
     }
 
-    public ChatMessage(Document document, User user, Role role, String content,
+    public ChatMessage(Conversation conversation, User user, Role role, String content,
             List<Map<String, Object>> citations) {
-        this.document = document;
+        this.conversation = conversation;
         this.user = user;
         this.role = role;
         this.content = content;
@@ -78,8 +78,8 @@ public class ChatMessage {
         return id;
     }
 
-    public Document getDocument() {
-        return document;
+    public Conversation getConversation() {
+        return conversation;
     }
 
     public User getUser() {

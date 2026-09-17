@@ -22,3 +22,8 @@ export function formatBytes(bytes: number): string {
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
+
+/** Whether text contains Khmer script (U+1780–U+17FF), to tag it `lang="km"`. */
+export function hasKhmer(text: string): boolean {
+  return /[\u1780-\u17FF]/.test(text);
+}

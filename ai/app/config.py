@@ -39,6 +39,31 @@ class Settings(BaseSettings):
     neighbour_window: int = 1
     max_context_tokens: int = 6000
 
+    # --- Speech ---
+    # A Khmer fine-tune of Whisper in CTranslate2 format. Used for dictation in Khmer
+    # and for any recording Whisper's base model detects as Khmer, because the stock
+    # multilingual checkpoints transcribe Khmer poorly. Empty disables the swap.
+    whisper_model_km: str = "PhanithLIM/whisper-small-khmer-ct2"
+    # A dictation clip is a question, not a lecture; anything longer is a mistake.
+    dictation_max_seconds: float = 120.0
+
+    # --- OCR ---
+    # Tesseract language packs, joined with '+'. Khmer is included so photos of Khmer
+    # notes and scanned Khmer handouts are readable.
+    ocr_languages: str = "eng+khm"
+
+    # --- Link resources ---
+    web_max_bytes: int = 5 * 1024 * 1024
+    web_timeout_seconds: float = 20.0
+    # Sites such as Wikipedia refuse clients whose User-Agent carries no contact URL.
+    # Set this to a URL or address for your deployment.
+    web_user_agent: str = (
+        "Mozilla/5.0 (compatible; LearnAssist/0.1; +https://github.com/learnassist)"
+    )
+    # Bounds Whisper time for one link; a 10-hour livestream would occupy the
+    # transcription worker for most of a day.
+    youtube_max_duration_seconds: int = 4 * 60 * 60
+
     # Local Ollama serialises requests; unbounded fan-out stalls the whole pipeline.
     embed_concurrency: int = 4
     embed_batch_size: int = 16

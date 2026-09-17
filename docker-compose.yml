@@ -83,6 +83,9 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
       WHISPER_COMPUTE: ${WHISPER_COMPUTE:-int8}
+      # Khmer fine-tune, used for Khmer voice messages and Khmer recordings.
+      WHISPER_MODEL_KM: ${WHISPER_MODEL_KM:-PhanithLIM/whisper-small-khmer-ct2}
+      OCR_LANGUAGES: ${OCR_LANGUAGES:-eng+khm}
     ports:
       - "${AI_PORT:-8000}:8000"
     extra_hosts:

@@ -27,14 +27,19 @@ from app.llm.ollama import SummaryResult, get_llm_provider
 from app.models import IngestRequest
 from app.ocr.render import render_pdf_page
 from app.ocr.tesseract import get_ocr_provider
-from app.parsers.base import ParseResult
+from app.models import SourceRef
+from app.parsers.base import ParsedUnit, ParseResult
 from app.parsers.docx import DocxParser
 from app.parsers.pdf import PdfParser
 from app.parsers.pptx import PptxParser
+from app.parsers.text import TextParser
+from app.parsers.web import WebParser
+from app.fetch import fetch_public_page
 from app.rag.prompts import SUMMARY_SYSTEM, build_summary_prompt
 from app.rag.retrieve import delete_chunks, store_chunks
-from app.storage import download_bytes
+from app.storage import download_bytes, upload_bytes
 from app.transcribe.whisper import WhisperTranscriber
+from app.transcribe.youtube import download_audio
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +49,63 @@ _PARSERS = {
     "application/pdf": PdfParser,
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": PptxParser,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocxParser,
+    "text/plain": TextParser,
+    "text/markdown": TextParser,
 }
+
+
+def reader_key(storage_key: str) -> str:
+    """Key of the text snapshot for the in-app reader.
+
+    Must match `StorageService.readerKey` in the API.
+    """
+    return f"{storage_key}.reader.json"
+
+
+def build_reader_snapshot(result: ParseResult, source_url: str | None = None) -> bytes:
+    """Serialise parsed units for the reader panel.
+
+    Written from the units, not the chunks, because chunks overlap: rendering them
+    back to back would repeat sentences at every split.
+    """
+    units = [
+        {
+            "kind": unit.source.kind,
+            "page_no": unit.source.page_no,
+            "slide_no": unit.source.slide_no,
+            "label": unit.source.label(),
+            "title": unit.section_title,
+            "text": unit.text,
+            "ocr": unit.ocr,
+        }
+        for unit in result.units
+        if unit.text.strip()
+    ]
+    return json.dumps(
+        {"version": 1, "source_url": source_url, "units": units}, ensure_ascii=False
+    ).encode("utf-8")
+
+
+def _normalised(content_type: str) -> str:
+    return content_type.lower().split(";")[0].strip()
+
+
+def _is_image(content_type: str) -> bool:
+    return _normalised(content_type).startswith("image/")
+
+
+def _image_result() -> ParseResult:
+    """A photo is one unit whose only possible text is what OCR reads from it."""
+    return ParseResult(
+        units=[
+            ParsedUnit(
+                text="",
+                source=SourceRef(kind="page", page_no=1, label_override="Image"),
+                needs_ocr=True,
+            )
+        ],
+        unit_count=1,
+    )
 
 
 async def _set_stage(document_id: UUID, stage: str, progress: int) -> None:
@@ -104,8 +165,13 @@ async def _fail(document_id: UUID, message: str) -> None:
         )
 
 
-async def _apply_ocr(document_id: UUID, data: bytes, result: ParseResult) -> int:
+async def _apply_ocr(
+    document_id: UUID, result: ParseResult, render: Callable[[int], bytes | None]
+) -> int:
     """Fill in units the parser flagged as scanned.
+
+    `render` turns a unit's page number into image bytes: a rasterised PDF page, or
+    for a photo upload, the photo itself.
 
     A page with no text layer would otherwise be silently absent from the index,
     which makes "the lecture does not cover this" a false statement rather than an
@@ -134,7 +200,7 @@ async def _apply_ocr(document_id: UUID, data: bytes, result: ParseResult) -> int
         if page_no is None:
             continue
 
-        image = await asyncio.to_thread(render_pdf_page, data, page_no)
+        image = await asyncio.to_thread(render, page_no)
         if image is None:
             continue
 
@@ -157,13 +223,11 @@ async def _apply_ocr(document_id: UUID, data: bytes, result: ParseResult) -> int
 
 
 def _is_media(content_type: str) -> bool:
-    normalised = content_type.lower().split(";")[0].strip()
-    return normalised.startswith(("audio/", "video/"))
+    return _normalised(content_type).startswith(("audio/", "video/"))
 
 
 def _select_parser(content_type: str):
-    normalised = content_type.lower().split(";")[0].strip()
-    parser = _PARSERS.get(normalised)
+    parser = _PARSERS.get(_normalised(content_type))
     if parser is None:
         raise ValueError(f"No parser registered for {content_type}")
     return parser()
@@ -207,38 +271,81 @@ async def _summarise(document_id: UUID, filename: str, result: ParseResult) -> N
         )
 
 
+async def _parse_youtube(request: IngestRequest) -> tuple[ParseResult, str | None]:
+    audio = await download_audio(request.source_url or "")
+    try:
+        await _set_stage(request.document_id, "TRANSCRIBING", 10)
+        result = await WhisperTranscriber().parse_file(
+            audio.path,
+            on_progress=_thread_safe_progress(asyncio.get_running_loop(), request.document_id),
+        )
+    finally:
+        audio.cleanup()
+    return result, audio.title
+
+
+async def _parse_web(request: IngestRequest) -> tuple[ParseResult, str | None]:
+    page = await fetch_public_page(request.source_url or "")
+    if request.storage_key:
+        # Keep what was actually read. The live page will change; the citation
+        # should still be checkable against the version the answer came from.
+        await upload_bytes(request.storage_key, page.content, page.content_type)
+    parser = WebParser(page.final_url)
+    result = parser.parse(page.content)
+    return result, parser.title
+
+
 async def run_ingest(request: IngestRequest) -> None:
     """Full pipeline for one document. Runs as a background task."""
     document_id = request.document_id
+    filename = request.filename
     try:
         await _set_stage(document_id, "PARSING", 5)
-        data = await download_bytes(request.storage_key)
 
-        if _is_media(request.content_type):
-            await _set_stage(document_id, "TRANSCRIBING", 10)
-            suffix = pathlib.Path(request.filename).suffix
-            # Transcription dominates the wall-clock time for a lecture recording,
-            # so it reports real progress across the 10-60% band rather than
-            # leaving the student watching a frozen bar for twenty minutes.
-            result = await WhisperTranscriber().parse(
-                data,
-                suffix=suffix,
-                on_progress=_thread_safe_progress(
-                    asyncio.get_running_loop(), document_id
-                ),
-            )
+        data: bytes | None = None
+        title: str | None = None
+
+        if request.doc_type == "YOUTUBE":
+            # Transcription dominates the wall-clock time, so it reports real
+            # progress across the 10-60% band.
+            result, title = await _parse_youtube(request)
+        elif request.doc_type == "WEB":
+            result, title = await _parse_web(request)
         else:
-            parser = _select_parser(request.content_type)
-            result = parser.parse(data)
+            if not request.storage_key:
+                raise ValueError("This resource has no uploaded file")
+            data = await download_bytes(request.storage_key)
+
+            if _is_media(request.content_type):
+                await _set_stage(document_id, "TRANSCRIBING", 10)
+                result = await WhisperTranscriber().parse(
+                    data,
+                    suffix=pathlib.Path(request.filename).suffix,
+                    on_progress=_thread_safe_progress(
+                        asyncio.get_running_loop(), document_id
+                    ),
+                )
+            elif _is_image(request.content_type):
+                result = _image_result()
+            else:
+                result = _select_parser(request.content_type).parse(data)
+
         logger.info(
             "Parsed %s: %d units (%d need OCR)",
-            request.filename, len(result.units), len(result.units_needing_ocr),
+            filename, len(result.units), len(result.units_needing_ocr),
         )
 
         # Scanned pages carry no text layer; recover them before chunking so they
         # are indexed like any other page.
-        if not _is_media(request.content_type):
-            await _apply_ocr(document_id, data, result)
+        if data is not None and _is_image(request.content_type):
+            image = data
+            await _apply_ocr(document_id, result, lambda _page: image)
+        elif data is not None and not _is_media(request.content_type):
+            pdf = data
+            await _apply_ocr(document_id, result, lambda page: render_pdf_page(pdf, page))
+
+        if title:
+            filename = title[:512]
 
         # Persist what parsing established before the slow stages run. Otherwise a
         # failure at embedding discards the page count and duration the UI needs to
@@ -247,13 +354,30 @@ async def run_ingest(request: IngestRequest) -> None:
             await session.execute(
                 text(
                     "UPDATE documents SET unit_count = :unit_count, duration_sec = :duration, "
-                    "updated_at = now() WHERE id = :id"
+                    "filename = :filename, updated_at = now() WHERE id = :id"
                 ),
                 {
                     "unit_count": result.unit_count,
                     "duration": result.duration_sec,
+                    "filename": filename,
                     "id": document_id,
                 },
+            )
+
+        # Resources with no native browser viewer get a text snapshot, so a citation
+        # to "Section 3" of a Word file or web page still opens on the cited text.
+        # PDFs have the browser's viewer and media has a player; neither needs one.
+        needs_reader = (
+            request.storage_key
+            and request.doc_type != "YOUTUBE"
+            and not _is_media(request.content_type)
+            and _normalised(request.content_type) != "application/pdf"
+        )
+        if needs_reader:
+            await upload_bytes(
+                reader_key(request.storage_key),
+                build_reader_snapshot(result, request.source_url),
+                "application/json",
             )
 
         await _set_stage(document_id, "CHUNKING", 25)
@@ -282,7 +406,7 @@ async def run_ingest(request: IngestRequest) -> None:
         await cache.bump_generation(document_id)
 
         await _set_stage(document_id, "SUMMARIZING", 75)
-        await _summarise(document_id, request.filename, result)
+        await _summarise(document_id, filename, result)
 
         async with session_scope() as session:
             await session.execute(
@@ -298,7 +422,7 @@ async def run_ingest(request: IngestRequest) -> None:
                 ),
                 {"id": document_id},
             )
-        logger.info("Ingest complete for %s (%d chunks)", request.filename, len(items))
+        logger.info("Ingest complete for %s (%d chunks)", filename, len(items))
 
     except Exception as exc:  # noqa: BLE001 - background task must record every failure
         logger.exception("Ingest failed for document %s", document_id)

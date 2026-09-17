@@ -21,6 +21,8 @@ export interface Citation {
   label: string;
   snippet: string;
   ocr?: boolean;
+  /** Which attached resource the citation points into. */
+  document_id?: string | null;
 }
 
 export type DocumentStatus =
@@ -57,11 +59,24 @@ export interface Summary {
   keyConcepts: KeyConcept[];
 }
 
+export type DocType =
+  | "PDF"
+  | "PPTX"
+  | "DOCX"
+  | "AUDIO"
+  | "VIDEO"
+  | "IMAGE"
+  | "TEXT"
+  | "WEB"
+  | "YOUTUBE";
+
 export interface LectureDocument {
   id: string;
   filename: string;
-  docType: "PDF" | "PPTX" | "DOCX" | "AUDIO" | "VIDEO";
+  docType: DocType;
   status: DocumentStatus;
+  /** Original URL for web page and YouTube resources. */
+  sourceUrl: string | null;
   unitCount: number | null;
   durationSec: number | null;
   sizeBytes: number;
@@ -78,6 +93,85 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+// ---------- conversations ----------
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Conversation extends ConversationSummary {
+  documents: LectureDocument[];
+  messages: ChatMessage[];
+}
+
+export type SpeechLanguage = "km" | "en" | "auto";
+
+export interface Transcript {
+  text: string;
+  language: string;
+  durationSec: number;
+}
+
+/** A section of extracted text, as written by the AI service's reader snapshot. */
+export interface ReaderUnit {
+  kind: SourceKind;
+  page_no: number | null;
+  slide_no: number | null;
+  label: string;
+  title: string | null;
+  text: string;
+  ocr: boolean;
+}
+
+export interface ReaderSnapshot {
+  version: number;
+  source_url: string | null;
+  units: ReaderUnit[];
+}
+
+// ---------- dashboard ----------
+
+export interface DashboardTotals {
+  resources: number;
+  ready: number;
+  processing: number;
+  failed: number;
+  chats: number;
+  questions: number;
+  groundedAnswers: number;
+  answers: number;
+  quizzes: number;
+  /** 0..1 */
+  averageScore: number;
+  streakDays: number;
+}
+
+export interface Dashboard {
+  totals: DashboardTotals;
+  resourceTypes: { docType: DocType; count: number }[];
+  /** One row per day, oldest first; `day` is YYYY-MM-DD in the viewer's zone. */
+  activity: { day: string; questions: number; quizzes: number; resources: number }[];
+  quizTrend: { takenAt: string; score: number; total: number; filename: string }[];
+  mostCited: { id: string; filename: string; docType: DocType; citations: number }[];
+  recentChats: {
+    id: string;
+    title: string;
+    updatedAt: string;
+    questions: number;
+    resources: number;
+  }[];
+  processing: {
+    id: string;
+    filename: string;
+    docType: DocType;
+    stage: IngestStage;
+    progress: number;
+  }[];
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -88,6 +182,19 @@ export interface AuthResponse {
   token: string;
   user: AuthUser;
 }
+
+/** Human-readable name for a resource type. */
+export const DOC_TYPE_LABELS: Record<DocType, string> = {
+  PDF: "PDF",
+  PPTX: "Slides",
+  DOCX: "Word",
+  TEXT: "Notes",
+  IMAGE: "Image",
+  AUDIO: "Audio",
+  VIDEO: "Video",
+  WEB: "Web page",
+  YOUTUBE: "YouTube",
+};
 
 /** Human-readable label for a pipeline stage. */
 export const STAGE_LABELS: Record<IngestStage, string> = {

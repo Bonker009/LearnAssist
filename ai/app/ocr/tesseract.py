@@ -49,6 +49,38 @@ class TesseractOcrProvider:
             source.unlink(missing_ok=True)
 
 
+def _installed_languages() -> set[str]:
+    try:
+        result = subprocess.run(
+            ["tesseract", "--list-langs"], capture_output=True, timeout=10
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    lines = result.stdout.decode(errors="replace").splitlines()
+    # The first line is a header ("List of available languages in ...").
+    return {line.strip() for line in lines[1:] if line.strip()}
+
+
+def usable_languages(requested: str, installed: set[str]) -> str:
+    """Drop requested language packs that are not installed.
+
+    Tesseract fails the whole page if any one `-l` language is missing, so a
+    configured `eng+khm` on an image built without the Khmer pack would turn every
+    OCR into an empty result. Better to read the English and log the gap.
+    """
+    wanted = [lang for lang in requested.split("+") if lang]
+    kept = [lang for lang in wanted if lang in installed] if installed else wanted
+    missing = sorted(set(wanted) - set(kept))
+    if missing:
+        logger.warning("Tesseract language pack(s) not installed: %s", ", ".join(missing))
+    return "+".join(kept) or "eng"
+
+
 @functools.cache
 def get_ocr_provider() -> TesseractOcrProvider:
-    return TesseractOcrProvider()
+    from app.config import get_settings
+
+    requested = get_settings().ocr_languages
+    if shutil.which("tesseract") is None:
+        return TesseractOcrProvider(requested)
+    return TesseractOcrProvider(usable_languages(requested, _installed_languages()))

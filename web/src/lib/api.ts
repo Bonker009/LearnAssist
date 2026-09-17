@@ -3,9 +3,15 @@
 import type {
   AuthResponse,
   ChatMessage,
+  Conversation,
+  Dashboard,
+  ConversationSummary,
   Grade,
   LectureDocument,
   Quiz,
+  ReaderSnapshot,
+  SpeechLanguage,
+  Transcript,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
@@ -36,30 +42,65 @@ export function setToken(token: string | null) {
   }
 }
 
+async function parseError(response: Response): Promise<ApiError> {
+  let message = `Request failed (${response.status})`;
+  try {
+    const body = await response.json();
+    if (body?.message) message = body.message;
+  } catch {
+    /* non-JSON error body */
+  }
+  return new ApiError(response.status, message);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
-
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (body?.message) message = body.message;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ApiError(response.status, message);
+  const isForm = init.body instanceof FormData;
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        // A FormData body must set its own multipart boundary header.
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
+  } catch {
+    // fetch only rejects when no response arrived at all: the server is down,
+    // unreachable, or refused the CORS preflight. The browser's own message
+    // ("Failed to fetch") says none of that.
+    throw new ApiError(
+      0,
+      `Can't reach the LearnAssist server at ${BASE_URL}. Check that it is running (docker compose up -d).`,
+    );
   }
 
+  if (!response.ok) throw await parseError(response);
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+/**
+ * Browsers report an empty type for many files (.md almost always), and the API
+ * rejects an unknown type. Fill it in from the extension rather than failing an
+ * upload the pipeline can actually read.
+ */
+export function contentTypeOf(file: File): string {
+  if (file.type) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const byExtension: Record<string, string> = {
+    md: "text/markdown",
+    markdown: "text/markdown",
+    txt: "text/plain",
+    pdf: "application/pdf",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    m4a: "audio/mp4",
+    webp: "image/webp",
+  };
+  return (extension && byExtension[extension]) || "application/octet-stream";
 }
 
 export const api = {
@@ -75,12 +116,24 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
+  // ---------- library ----------
+
   listDocuments: () => request<LectureDocument[]>("/api/documents"),
 
   getDocument: (id: string) => request<LectureDocument>(`/api/documents/${id}`),
 
   getFileUrl: (id: string) =>
     request<{ url: string }>(`/api/documents/${id}/file`),
+
+  getReader: (id: string) => request<ReaderSnapshot>(`/api/documents/${id}/reader`),
+
+  addLink: (url: string, conversationId?: string) =>
+    request<LectureDocument>("/api/documents/links", {
+      method: "POST",
+      body: JSON.stringify({ url, conversationId }),
+    }),
+
+  // ---------- quizzes ----------
 
   generateQuiz: (documentId: string, count = 5) =>
     request<Quiz>(`/api/documents/${documentId}/quiz?count=${count}`, { method: "POST" }),
@@ -93,13 +146,61 @@ export const api = {
       body: JSON.stringify({ answers }),
     }),
 
-  getMessages: (id: string) => request<ChatMessage[]>(`/api/documents/${id}/messages`),
+  // ---------- conversations ----------
 
-  ask: (id: string, question: string) =>
-    request<ChatMessage>(`/api/documents/${id}/chat`, {
+  listConversations: () => request<ConversationSummary[]>("/api/conversations"),
+
+  createConversation: (title?: string) =>
+    request<Conversation>("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    }),
+
+  getConversation: (id: string) => request<Conversation>(`/api/conversations/${id}`),
+
+  renameConversation: (id: string, title: string) =>
+    request<ConversationSummary>(`/api/conversations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+
+  deleteConversation: (id: string) =>
+    request<void>(`/api/conversations/${id}`, { method: "DELETE" }),
+
+  attachDocument: (conversationId: string, documentId: string) =>
+    request<LectureDocument[]>(`/api/conversations/${conversationId}/documents`, {
+      method: "POST",
+      body: JSON.stringify({ documentId }),
+    }),
+
+  detachDocument: (conversationId: string, documentId: string) =>
+    request<void>(`/api/conversations/${conversationId}/documents/${documentId}`, {
+      method: "DELETE",
+    }),
+
+  sendMessage: (conversationId: string, question: string) =>
+    request<ChatMessage>(`/api/conversations/${conversationId}/messages`, {
       method: "POST",
       body: JSON.stringify({ question }),
     }),
+
+  // ---------- dashboard ----------
+
+  getDashboard: () => {
+    // Days are bucketed in the viewer's own zone, so "today" means their today.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return request<Dashboard>(`/api/dashboard?tz=${encodeURIComponent(tz)}`);
+  },
+
+  // ---------- speech ----------
+
+  transcribe: (audio: Blob, language: SpeechLanguage) => {
+    const form = new FormData();
+    const extension = audio.type.includes("mp4") ? "m4a" : audio.type.includes("ogg") ? "ogg" : "webm";
+    form.append("file", audio, `voice.${extension}`);
+    form.append("language", language);
+    return request<Transcript>("/api/speech/transcribe", { method: "POST", body: form });
+  },
 
   /**
    * Upload in three steps: reserve a row and get a presigned URL, PUT the bytes
@@ -108,15 +209,20 @@ export const api = {
    * The bytes never pass through the API server, which is what makes a 500MB
    * lecture recording viable.
    */
-  async upload(file: File, onProgress?: (percent: number) => void): Promise<LectureDocument> {
+  async upload(
+    file: File,
+    options: { conversationId?: string; onProgress?: (percent: number) => void } = {},
+  ): Promise<LectureDocument> {
+    const contentType = contentTypeOf(file);
     const ticket = await request<{ documentId: string; uploadUrl: string }>(
       "/api/documents",
       {
         method: "POST",
         body: JSON.stringify({
           filename: file.name,
-          contentType: file.type || "application/octet-stream",
+          contentType,
           sizeBytes: file.size,
+          conversationId: options.conversationId,
         }),
       },
     );
@@ -126,10 +232,10 @@ export const api = {
       // multi-hundred-megabyte upload with no progress bar feels broken.
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", ticket.uploadUrl);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.setRequestHeader("Content-Type", contentType);
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          onProgress(Math.round((event.loaded / event.total) * 100));
+        if (event.lengthComputable && options.onProgress) {
+          options.onProgress(Math.round((event.loaded / event.total) * 100));
         }
       };
       xhr.onload = () =>
@@ -144,12 +250,26 @@ export const api = {
       method: "POST",
     });
   },
+
+  /** Pasted notes become a Markdown file and go through the normal upload path. */
+  uploadNote(title: string, text: string, conversationId?: string) {
+    const safe = (title.trim() || "Notes").replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120);
+    const file = new File([text], `${safe}.md`, { type: "text/markdown" });
+    return api.upload(file, { conversationId });
+  },
 };
 
 export const ACCEPTED_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/markdown",
+  ".md",
+  ".txt",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
   "audio/*",
   "video/*",
 ].join(",");

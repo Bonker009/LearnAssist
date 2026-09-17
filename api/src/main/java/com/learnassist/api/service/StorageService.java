@@ -99,6 +99,32 @@ public class StorageService {
     }
 
     /**
+     * Read a small object whole, or empty if it does not exist.
+     *
+     * <p>Only for derived artefacts measured in kilobytes (the reader snapshot). Lecture files are
+     * always served by presigned URL so they never pass through the JVM.
+     */
+    public java.util.Optional<byte[]> readSmallObject(String storageKey) {
+        try {
+            return java.util.Optional.of(client.getObjectAsBytes(GetObjectRequest.builder()
+                    .bucket(props.s3().bucket())
+                    .key(storageKey)
+                    .build()).asByteArray());
+        } catch (S3Exception e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
+     * Key of the text snapshot the AI service writes beside a document.
+     *
+     * <p>Must match {@code reader_key} in the AI service's ingest module.
+     */
+    public static String readerKey(String storageKey) {
+        return storageKey + ".reader.json";
+    }
+
+    /**
      * @return the uploaded object's size, or empty if the client never completed the PUT
      */
     public java.util.Optional<Long> uploadedSize(String storageKey) {

@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+/* Data-state variants (data-open, data-closed, …) used by the shadcn/Base UI primitives. */
+@import "shadcn/tailwind.css";
+
+/* next-themes toggles `.dark` on <html>; make Tailwind's `dark:` follow it. */
+@custom-variant dark (&:is(.dark *));
 
 /* ============================================================================
    LAYER 1 — PRIMITIVES
@@ -6,7 +12,8 @@
    they exist so the semantic layer below has a fixed vocabulary to draw from.
    ========================================================================= */
 :root {
-  /* Neutrals */
+  /* Neutrals — cool blue-gray, so text and surfaces sit with the brand blue
+     instead of reading as flat black and gray. */
   --slate-50:  oklch(0.984 0.003 247);
   --slate-100: oklch(0.968 0.007 247);
   --slate-200: oklch(0.929 0.013 255);
@@ -17,33 +24,53 @@
   --slate-700: oklch(0.372 0.036 259);
   --slate-800: oklch(0.279 0.037 260);
   --slate-900: oklch(0.208 0.039 266);
-  --slate-950: oklch(0.129 0.038 265);
+  --slate-950: oklch(0.160 0.030 262);
 
-  /* Brand — study/focus blue */
-  --indigo-100: oklch(0.930 0.034 273);
-  --indigo-300: oklch(0.785 0.104 274);
-  --indigo-500: oklch(0.585 0.203 277);
-  --indigo-600: oklch(0.511 0.226 277);
-  --indigo-700: oklch(0.457 0.207 277);
-  --indigo-950: oklch(0.257 0.090 281);
+  /* Brand blue, built around #00518D (step 600). */
+  --blue-50:  oklch(0.972 0.013 247);
+  --blue-100: oklch(0.935 0.030 248);
+  --blue-200: oklch(0.870 0.058 248);
+  --blue-300: oklch(0.790 0.090 248);
+  --blue-400: oklch(0.690 0.115 249);
+  --blue-500: oklch(0.560 0.128 249);
+  --blue-600: #00518d;
+  --blue-700: oklch(0.370 0.105 250);
+  --blue-900: oklch(0.275 0.072 251);
+  --blue-950: oklch(0.225 0.052 252);
+
+  /* Accent red, built around #EA1D24 (step 500). */
+  --red-50:  oklch(0.971 0.014 20);
+  --red-100: oklch(0.936 0.034 20);
+  --red-300: oklch(0.800 0.110 24);
+  --red-500: #ea1d24;
+  --red-600: oklch(0.545 0.215 27);
+  --red-700: oklch(0.480 0.180 27);
+  --red-950: oklch(0.260 0.090 26);
 
   /* Citation — the product's signature element gets its own hue, deliberately
-     distinct from the brand so a source chip never reads as a generic button. */
+     distinct from both brand colours so a source chip never reads as a button
+     or an alert. */
   --amber-100: oklch(0.962 0.059 95);
   --amber-300: oklch(0.879 0.140 88);
   --amber-500: oklch(0.769 0.161 70);
   --amber-700: oklch(0.555 0.128 67);
   --amber-950: oklch(0.279 0.077 69);
 
-  /* Status */
-  --green-100: oklch(0.962 0.044 157);
-  --green-600: oklch(0.627 0.170 149);
-  --green-950: oklch(0.266 0.065 153);
-  --red-100:   oklch(0.936 0.032 18);
-  --red-600:   oklch(0.577 0.245 27);
-  --red-950:   oklch(0.258 0.092 26);
+  /* Status — green for success, orange for warning: neither blue nor red, so
+     neither is mistaken for the brand or the accent. */
+  --green-100:  oklch(0.962 0.044 157);
+  --green-600:  oklch(0.600 0.140 155);
+  --green-950:  oklch(0.266 0.065 153);
+  --orange-100: oklch(0.954 0.045 70);
+  --orange-600: oklch(0.646 0.160 55);
+  --orange-950: oklch(0.285 0.075 50);
 
-  /* Spacing — 4px base, modular. No arbitrary values anywhere in components. */
+  /* Data palette: distinct hues that stay readable next to brand blue. */
+  --teal-500:   oklch(0.640 0.110 190);
+  --violet-500: oklch(0.560 0.160 295);
+  --rose-500:   oklch(0.620 0.190 5);
+
+  /* Spacing — 4px grid. */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -53,22 +80,21 @@
   --space-7: 3rem;
   --space-8: 4rem;
 
-  /* Type scale — 1.25 ratio off a 1rem base */
-  --text-xs:   0.75rem;
-  --text-sm:   0.875rem;
-  --text-base: 1rem;
-  --text-lg:   1.125rem;
-  --text-xl:   1.375rem;
-  --text-2xl:  1.75rem;
-  --text-3xl:  2.25rem;
+  /* Radius — ~10px base; step down for nested pieces, up for outer shells. */
+  --radius-sm: 0.375rem; /* 6px  — chips, tight inner elements */
+  --radius-md: 0.5rem;   /* 8px  — fields, compact controls */
+  --radius-lg: 0.625rem; /* 10px — default cards and controls */
+  --radius-xl: 0.875rem; /* 14px — large cards, shells */
 
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-full: 9999px;
+  /* Elevation — soft and low. */
+  --shadow-sm: 0 1px 2px 0 oklch(0.25 0.04 255 / 0.05);
+  --shadow-md: 0 1px 2px -1px oklch(0.25 0.04 255 / 0.06), 0 4px 12px -4px oklch(0.25 0.04 255 / 0.08);
+  --shadow-lg: 0 2px 4px -2px oklch(0.25 0.04 255 / 0.06), 0 12px 28px -8px oklch(0.25 0.04 255 / 0.16);
 
-  --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 0.05);
-  --shadow-md: 0 4px 12px -2px oklch(0 0 0 / 0.08);
+  /* Motion — short, ease-out, no overshoot. */
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ============================================================================
@@ -89,10 +115,15 @@
   --color-text-subtle:  var(--slate-500);
   --color-text-inverse: #ffffff;
 
-  --color-primary:       var(--indigo-600);
-  --color-primary-hover: var(--indigo-700);
-  --color-primary-soft:  var(--indigo-100);
-  --color-primary-text:  var(--indigo-700);
+  --color-primary:       var(--blue-600);
+  --color-primary-hover: var(--blue-700);
+  --color-primary-soft:  var(--blue-50);
+  --color-primary-text:  var(--blue-600);
+
+  /* Emphasis: strong secondary highlight (English line under a Khmer title,
+     attention-worthy notices that are not errors). */
+  --color-emphasis:    var(--red-500);
+  --color-emphasis-bg: var(--red-50);
 
   /* Citation tokens: a source chip is a distinct affordance, not a link. */
   --color-citation:        var(--amber-700);
@@ -101,10 +132,26 @@
 
   --color-success:    var(--green-600);
   --color-success-bg: var(--green-100);
+  --color-warning:    var(--orange-600);
+  --color-warning-bg: var(--orange-100);
   --color-danger:     var(--red-600);
   --color-danger-bg:  var(--red-100);
 
-  --color-focus: var(--indigo-500);
+  --color-chart-1: var(--blue-600);
+  --color-chart-2: var(--teal-500);
+  --color-chart-3: var(--amber-500);
+  --color-chart-4: var(--violet-500);
+  --color-chart-5: var(--rose-500);
+
+  --color-focus: var(--blue-500);
+
+  /* AI presence: tints of the brand blue and accent red, bridged by sky and violet
+     so the glow reads as one soft colour field rather than two clashing hues. */
+  --color-ai-1: #3f8fe0;
+  --color-ai-2: #8ec5ff;
+  --color-ai-3: #9b8cf8;
+  --color-ai-4: #f2848a;
+  --color-ai-gloss: rgb(255 255 255 / 0.85);
 
   color-scheme: light;
 }
@@ -115,31 +162,82 @@
   --color-canvas:        var(--slate-950);
   --color-surface:       var(--slate-900);
   --color-surface-muted: var(--slate-800);
-  --color-border:        var(--slate-800);
+  --color-border:        oklch(0.330 0.035 260);
   --color-border-strong: var(--slate-700);
 
   --color-text:         var(--slate-100);
   --color-text-muted:   var(--slate-400);
   --color-text-subtle:  var(--slate-500);
+  /* Primary fills turn light in dark mode, so their text turns dark. */
   --color-text-inverse: var(--slate-950);
 
-  --color-primary:       var(--indigo-500);
-  --color-primary-hover: var(--indigo-300);
-  --color-primary-soft:  var(--indigo-950);
-  --color-primary-text:  var(--indigo-300);
+  --color-primary:       var(--blue-300);
+  --color-primary-hover: var(--blue-200);
+  --color-primary-soft:  var(--blue-950);
+  --color-primary-text:  var(--blue-300);
+
+  --color-emphasis:    oklch(0.700 0.190 25);
+  --color-emphasis-bg: var(--red-950);
 
   --color-citation:        var(--amber-300);
   --color-citation-bg:     var(--amber-950);
   --color-citation-border: var(--amber-700);
 
-  --color-success:    oklch(0.723 0.170 149);
+  --color-success:    oklch(0.740 0.140 155);
   --color-success-bg: var(--green-950);
-  --color-danger:     oklch(0.704 0.191 22);
+  --color-warning:    oklch(0.780 0.140 65);
+  --color-warning-bg: var(--orange-950);
+  --color-danger:     oklch(0.700 0.180 25);
   --color-danger-bg:  var(--red-950);
 
-  --color-focus: var(--indigo-300);
+  --color-chart-1: var(--blue-400);
+
+  --color-focus: var(--blue-400);
+
+  --color-ai-1: #4f9cf0;
+  --color-ai-2: #7ab8ff;
+  --color-ai-3: #8f7ff5;
+  --color-ai-4: #f07a82;
+  --color-ai-gloss: rgb(255 255 255 / 0.35);
 
   color-scheme: dark;
+}
+
+/* ============================================================================
+   SHADCN BRIDGE
+   shadcn components (components/ui/{button,dropdown-menu,textarea,…} and the
+   blocks.so chat composer) speak shadcn's token names. Rather than adopt a second
+   palette, those names are aliases of the semantic layer above. Because they point
+   at semantic tokens, `.dark` needs no second copy: redefining the semantic layer
+   is enough, exactly as for every other component.
+   ========================================================================= */
+:root {
+  --background:           var(--color-surface);
+  --foreground:           var(--color-text);
+  --card:                 var(--color-surface);
+  --card-foreground:      var(--color-text);
+  --popover:              var(--color-surface);
+  --popover-foreground:   var(--color-text);
+  --primary:              var(--color-primary);
+  --primary-foreground:   var(--color-text-inverse);
+  --secondary:            var(--color-surface-muted);
+  --secondary-foreground: var(--color-text);
+  --muted:                var(--color-surface-muted);
+  --muted-foreground:     var(--color-text-muted);
+  --accent:               var(--color-surface-muted);
+  --accent-foreground:    var(--color-text);
+  --destructive:          var(--color-danger);
+  --border:               var(--color-border);
+  --input:                var(--color-border-strong);
+  --ring:                 var(--color-focus);
+  --radius:               var(--radius-lg);
+
+  /* Community components (Magic UI) reference these Tailwind theme names directly
+     in inline styles. `@theme inline` does not emit them as CSS variables, so they
+     are defined here or those styles resolve to nothing. */
+  --color-background:       var(--color-surface);
+  --color-foreground:       var(--color-text);
+  --color-muted-foreground: var(--color-text-muted);
 }
 
 /* ============================================================================
@@ -147,11 +245,13 @@
    ========================================================================= */
 :root {
   --control-radius: var(--radius-md);
-  --control-height: 2.5rem;
+  /* Control heights: xs 24 · sm 32 · default 36 · lg 40. */
+  --control-height: 2.25rem;
   --card-radius: var(--radius-lg);
-  --chip-radius: var(--radius-full);
-  --focus-ring-width: 2px;
-  --focus-ring-offset: 2px;
+  --shell-radius: var(--radius-xl);
+  --chip-radius: var(--radius-sm);
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 1px;
 }
 
 /* Expose the semantic layer to Tailwind utilities (bg-surface, text-muted, …) */
@@ -169,43 +269,112 @@
   --color-primary-hover: var(--color-primary-hover);
   --color-primary-soft: var(--color-primary-soft);
   --color-primary-text: var(--color-primary-text);
+  --color-emphasis: var(--color-emphasis);
+  --color-emphasis-bg: var(--color-emphasis-bg);
   --color-citation: var(--color-citation);
   --color-citation-bg: var(--color-citation-bg);
   --color-citation-border: var(--color-citation-border);
   --color-success: var(--color-success);
   --color-success-bg: var(--color-success-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
   --color-danger: var(--color-danger);
   --color-danger-bg: var(--color-danger-bg);
   --color-focus: var(--color-focus);
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --ease-out: var(--ease-out);
+
+  /* Latin in Plus Jakarta Sans; Khmer falls through to Kantumruy Pro, which has
+     the glyphs the Latin face lacks. Dangrek is for Khmer display lines only. */
+  --font-sans: var(--font-jakarta), var(--font-kantumruy), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-jakarta), var(--font-kantumruy), ui-sans-serif, system-ui, sans-serif;
+  --font-display-km: var(--font-dangrek), var(--font-kantumruy), ui-sans-serif, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 /* ============================================================================
    BASE
    ========================================================================= */
-* {
-  border-color: var(--color-border);
+/* Base rules live in the base layer so utilities (border-transparent, bg-*, …)
+   can override them; unlayered rules would beat every utility regardless of
+   specificity and, for example, give ghost buttons a visible border. */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  /* Explicit stack, not var(--font-sans): `@theme inline` inlines theme values
+     into utilities without emitting them as CSS variables, so the var would be
+     undefined here and the page would fall back to the system font. */
+  html,
+  body {
+    font-family: var(--font-jakarta), var(--font-kantumruy), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
-body {
-  background: var(--color-canvas);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
-
-/* One focus treatment for everything. WCAG 2.2 requires focus to be visible;
-   relying on the browser default breaks as soon as a component sets outline:none. */
+/* One soft focus ring for everything that doesn't draw its own. WCAG 2.2 requires
+   focus to be visible; relying on the browser default breaks as soon as a
+   component sets outline:none. It never changes the element's shape — a round
+   button stays round when focused. */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: var(--focus-ring-width) solid var(--color-focus);
+  outline: var(--focus-ring-width) solid color-mix(in oklch, var(--color-focus) 50%, transparent);
   outline-offset: var(--focus-ring-offset);
-  border-radius: var(--radius-sm);
+}
+
+/* Thin, quiet scrollbars that follow the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -217,6 +386,174 @@ body {
   }
 }
 
-@keyframes shimmer {
-  100% { transform: translateX(100%); }
+/* Khmer has no spaces between words; without this a long Khmer sentence cannot
+   wrap at all and overflows its bubble. Longer passages set in Kantumruy Pro. */
+:lang(km) {
+  font-family: var(--font-kantumruy), var(--font-jakarta), ui-sans-serif, sans-serif;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+
+/* Khmer display lines (page titles, empty-state headlines). Dangrek has one
+   weight; faux bold would smear it, so synthesis is turned off. */
+.font-display-km {
+  font-family: var(--font-dangrek), var(--font-kantumruy), ui-sans-serif, sans-serif;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+/* Micro-labels: filter headings, tab captions, badge text. */
+.micro-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ============================================================================
+   AI PRESENCE — the glow (AiOrb) and waves (AiWaves).
+   State arrives as data-state; the live mic level as --ai-level (0..1).
+   ========================================================================= */
+@property --ai-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+@keyframes ai-turn {
+  to { --ai-angle: 360deg; }
+}
+
+@keyframes ai-breathe {
+  0%, 100% { scale: 0.97; }
+  50%      { scale: 1.03; }
+}
+
+@keyframes ai-pulse {
+  0%, 100% { scale: 0.9;  opacity: 0.85; }
+  50%      { scale: 1.08; opacity: 1; }
+}
+
+@keyframes ai-slide {
+  to { translate: -50% 0; }
+}
+
+/* In the components layer, so Tailwind utilities on the same elements (absolute,
+   inset-*, size-*) still win — an unlayered rule would override them. */
+@layer components {
+  .ai-orb {
+    --ai-level: 0;
+    --ai-turn: 14s;
+    --ai-breathe: 5s;
+    isolation: isolate;
+  }
+  .ai-orb[data-state="listening"] { --ai-turn: 7s; }
+  .ai-orb[data-state="thinking"]  { --ai-turn: 2.8s; --ai-breathe: 1.6s; }
+
+  .ai-orb-bloom,
+  .ai-orb-body {
+    position: absolute;
+    border-radius: 9999px;
+    background: conic-gradient(
+      from var(--ai-angle),
+      var(--color-ai-1),
+      var(--color-ai-2),
+      var(--color-ai-3),
+      var(--color-ai-4),
+      var(--color-ai-2),
+      var(--color-ai-1)
+    );
+    animation:
+      ai-turn var(--ai-turn) linear infinite,
+      ai-breathe var(--ai-breathe) ease-in-out infinite;
+    transition: transform 120ms ease-out, opacity 200ms ease-out, filter 200ms ease-out;
+  }
+
+  /* Soft halo behind the body; it grows and brightens with the voice. */
+  .ai-orb-bloom {
+    inset: -14%;
+    filter: blur(22px);
+    opacity: calc(0.45 + var(--ai-level) * 0.45);
+    transform: scale(calc(1 + var(--ai-level) * 0.22));
+  }
+
+  .ai-orb-body {
+    inset: 10%;
+    filter: blur(2px) saturate(1.1);
+    transform: scale(calc(1 + var(--ai-level) * 0.12));
+    box-shadow: inset 0 0 24px rgb(255 255 255 / 0.25);
+  }
+
+  /* Glassy highlight so the body reads as a soft sphere, not a flat disc. */
+  .ai-orb-gloss {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(circle at 34% 28%, var(--color-ai-gloss) 0%, transparent 46%),
+      radial-gradient(circle at 70% 78%, rgb(255 255 255 / 0.18) 0%, transparent 40%);
+  }
+
+  .ai-orb-sparkle {
+    position: absolute;
+    inset: 33%;
+    fill: #ffffff;
+    filter: drop-shadow(0 0 6px rgb(255 255 255 / 0.9));
+    opacity: 0.9;
+  }
+  .ai-orb[data-state="thinking"] .ai-orb-sparkle {
+    animation: ai-pulse 1.2s ease-in-out infinite;
+  }
+  .ai-orb[data-state="listening"] .ai-orb-sparkle {
+    scale: calc(1 + var(--ai-level) * 0.25);
+  }
+
+  .ai-waves {
+    --ai-level: 0;
+    --ai-wave-speed: 1;
+    /* Fade in from the top so the waves rise out of the page instead of sitting
+       on it as a solid band. */
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 65%);
+  }
+  .ai-waves[data-state="thinking"]  { --ai-wave-speed: 0.45; }
+  .ai-waves[data-state="listening"] { --ai-wave-speed: 0.6; }
+
+  .ai-wave {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 200%;
+    height: 100%;
+    transform-origin: bottom;
+    transform: scaleY(calc(0.7 + var(--ai-level) * 0.9));
+    transition: transform 150ms ease-out;
+  }
+  .ai-wave path { stroke: none; }
+  .ai-wave-1 {
+    opacity: 0.16;
+    fill: var(--color-ai-1);
+    animation: ai-slide calc(18s * var(--ai-wave-speed)) linear infinite;
+  }
+  .ai-wave-2 {
+    opacity: 0.12;
+    fill: var(--color-ai-3);
+    animation: ai-slide calc(26s * var(--ai-wave-speed)) linear infinite reverse;
+  }
+  .ai-wave-3 {
+    opacity: 0.1;
+    fill: var(--color-ai-4);
+    animation: ai-slide calc(34s * var(--ai-wave-speed)) linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-orb-bloom,
+  .ai-orb-body,
+  .ai-orb-sparkle,
+  .ai-wave {
+    animation: none !important;
+  }
 }

@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chunking.splitter import count_tokens
@@ -71,16 +71,20 @@ async def delete_chunks(session: AsyncSession, document_id: UUID) -> None:
 
 async def retrieve(
     session: AsyncSession,
-    document_id: UUID,
+    document_ids: list[UUID],
     question: str,
     embedder: EmbeddingProvider,
 ) -> list[Chunk]:
     """Find the chunks most likely to answer `question`, with context.
 
-    Scoped to a single document throughout: a student asking about one lecture
-    must never be answered from another, and restricting the search also keeps
-    recall high on a small corpus.
+    Scoped to the given documents -- the resources attached to one chat -- throughout.
+    A student asking in their biology chat must never be answered from a history
+    lecture elsewhere in their library, and restricting the search keeps recall high
+    on a small corpus.
     """
+    if not document_ids:
+        return []
+
     settings = get_settings()
     query_vector = await embedder.embed_query(question)
 
@@ -88,7 +92,7 @@ async def retrieve(
     hits = (
         await session.execute(
             select(chunks_table, distance.label("distance"))
-            .where(chunks_table.c.document_id == document_id)
+            .where(chunks_table.c.document_id.in_(document_ids))
             .order_by(distance)
             .limit(settings.retrieval_top_k)
         )
@@ -97,38 +101,39 @@ async def retrieve(
     if not hits:
         return []
 
+    window = range(-settings.neighbour_window, settings.neighbour_window + 1)
+
     # Expand each hit to its neighbours: a definition and the sentence that uses
     # it usually land in adjacent chunks, and retrieving one without the other
-    # produces a technically-sourced but useless answer.
-    wanted: set[int] = set()
-    for row in hits:
-        for offset in range(-settings.neighbour_window, settings.neighbour_window + 1):
-            if row.ordinal + offset >= 0:
-                wanted.add(row.ordinal + offset)
+    # produces a technically-sourced but useless answer. Ordinals are only unique
+    # within a document, so neighbours are addressed by (document, ordinal).
+    wanted: set[tuple[UUID, int]] = {
+        (row.document_id, row.ordinal + offset)
+        for row in hits
+        for offset in window
+        if row.ordinal + offset >= 0
+    }
 
     expanded = (
         await session.execute(
             select(chunks_table)
-            .where(
-                chunks_table.c.document_id == document_id,
-                chunks_table.c.ordinal.in_(wanted),
-            )
-            .order_by(chunks_table.c.ordinal)
+            .where(tuple_(chunks_table.c.document_id, chunks_table.c.ordinal).in_(wanted))
+            .order_by(chunks_table.c.document_id, chunks_table.c.ordinal)
         )
     ).all()
 
-    by_ordinal = {row.ordinal: _row_to_chunk(row) for row in expanded}
+    by_key = {(row.document_id, row.ordinal): _row_to_chunk(row) for row in expanded}
 
     # Keep relevance order (best hit first) so that if the context budget forces
     # a truncation, it is the least relevant material that is dropped.
     ordered: list[Chunk] = []
-    seen: set[int] = set()
+    seen: set[tuple[UUID, int]] = set()
     for row in hits:
-        for offset in range(-settings.neighbour_window, settings.neighbour_window + 1):
-            ordinal = row.ordinal + offset
-            if ordinal in by_ordinal and ordinal not in seen:
-                seen.add(ordinal)
-                ordered.append(by_ordinal[ordinal])
+        for offset in window:
+            key = (row.document_id, row.ordinal + offset)
+            if key in by_key and key not in seen:
+                seen.add(key)
+                ordered.append(by_key[key])
 
     budget = settings.max_context_tokens
     selected: list[Chunk] = []
