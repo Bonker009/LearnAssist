@@ -1,0 +1,19 @@
+{
+  "name": "learnassist-slides",
+  "private": true,
+  "type": "module",
+  "description": "Renders Slidev decks (static site + PDF) for LearnAssist and stores them in RustFS",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1135.0",
+    "@slidev/cli": "^53.0.0",
+    "@slidev/theme-default": "^0.25.0",
+    "playwright-chromium": "^1.63.0"
+  }
+}

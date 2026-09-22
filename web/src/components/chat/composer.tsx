@@ -24,7 +24,6 @@ import {
   IconNote,
   IconPaperclip,
   IconPhoto,
-  IconPlayerStopFilled,
   IconPlus,
   IconVideo,
   IconVolume,
@@ -32,6 +31,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import * as React from "react";
+import { AiOrb } from "@/components/ai-orb";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,13 +49,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LiveWaveform } from "@/components/ui/live-waveform";
-import { ShimmeringText } from "@/components/ui/shimmering-text";
 import { Textarea } from "@/components/ui/textarea";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { ACCEPTED_TYPES } from "@/lib/api";
-import type { DocType, LectureDocument, SpeechLanguage } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import type { DocType, LectureDocument } from "@/lib/types";
+import { cn, hasKhmer } from "@/lib/utils";
 
 export interface PendingUpload {
   id: string;
@@ -76,23 +74,6 @@ const DOC_ICONS: Record<DocType, typeof IconFileText> = {
   YOUTUBE: IconBrandYoutube,
 };
 
-const LANGUAGES: { value: SpeechLanguage; label: string; title: string }[] = [
-  { value: "km", label: "ខ្មែរ", title: "Speak in Khmer" },
-  { value: "en", label: "EN", title: "Speak in English" },
-  { value: "auto", label: "Auto", title: "Detect the language" },
-];
-const LANGUAGE_KEY = "learnassist.speechLanguage";
-
-function readLanguage(): SpeechLanguage {
-  try {
-    const stored = window.localStorage.getItem(LANGUAGE_KEY);
-    if (stored === "km" || stored === "en" || stored === "auto") return stored;
-  } catch {
-    /* storage unavailable: use the default */
-  }
-  return "km";
-}
-
 export interface ComposerProps {
   documents: LectureDocument[];
   uploads: PendingUpload[];
@@ -107,11 +88,21 @@ export interface ComposerProps {
   onOpenDocument: (id: string) => void;
   onRemoveDocument: (id: string) => void;
   onDismissUpload: (id: string) => void;
-  onTranscribe: (clip: Blob, language: SpeechLanguage) => Promise<string>;
+  /** Speech to text. The service detects the language, Khmer included. */
+  onTranscribe: (clip: Blob) => Promise<string>;
   /** Receives the live microphone level, for the orb. */
   voiceLevelRef?: React.RefObject<number>;
+  /** Receives 0..1 progress toward the automatic stop on silence, for the orb's ring. */
+  voiceSilenceRef?: React.RefObject<number>;
   /** Told when voice input starts listening, starts transcribing, or goes idle. */
   onVoiceStateChange?: (state: "idle" | "listening" | "thinking") => void;
+  /** Lets an orb outside the composer (the welcome screen's) finish listening. */
+  handleRef?: React.Ref<ComposerHandle>;
+}
+
+export interface ComposerHandle {
+  /** Stop listening now and transcribe what was said. */
+  finishVoice: () => void;
 }
 
 export function Composer(props: ComposerProps) {
@@ -128,35 +119,25 @@ export function Composer(props: ComposerProps) {
     onDismissUpload,
     onTranscribe,
     voiceLevelRef,
+    voiceSilenceRef,
     onVoiceStateChange,
+    handleRef,
   } = props;
 
   const [prompt, setPrompt] = React.useState("");
   const [dragOver, setDragOver] = React.useState(false);
   const [linkOpen, setLinkOpen] = React.useState(false);
   const [noteOpen, setNoteOpen] = React.useState(false);
-  // Safe to read storage during the first render: the composer only mounts after
-  // auth has resolved in the browser, never during server rendering.
-  const [language, setLanguage] = React.useState<SpeechLanguage>(readLanguage);
   const [transcribing, setTranscribing] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState<string | null>(null);
   const fileInput = React.useRef<HTMLInputElement>(null);
   const textarea = React.useRef<HTMLTextAreaElement>(null);
 
-  function chooseLanguage(value: SpeechLanguage) {
-    setLanguage(value);
-    try {
-      window.localStorage.setItem(LANGUAGE_KEY, value);
-    } catch {
-      /* non-fatal */
-    }
-  }
-
   const recorder = useVoiceRecorder(async (clip) => {
     setTranscribing(true);
     setVoiceError(null);
     try {
-      const text = (await onTranscribe(clip, language)).trim();
+      const text = (await onTranscribe(clip)).trim();
       if (!text) {
         setVoiceError("Didn't catch that. Try again a little closer to the mic.");
         return;
@@ -165,7 +146,8 @@ export function Composer(props: ComposerProps) {
       // edit between them before sending.
       setPrompt((previous) => {
         if (!previous.trim()) return text;
-        const joiner = language === "km" ? "" : " ";
+        // Khmer has no spaces between words, so a Khmer continuation joins directly.
+        const joiner = hasKhmer(text) ? "" : " ";
         return `${previous.trimEnd()}${joiner}${text}`;
       });
       requestAnimationFrame(() => textarea.current?.focus());
@@ -174,16 +156,17 @@ export function Composer(props: ComposerProps) {
     } finally {
       setTranscribing(false);
     }
-  }, voiceLevelRef);
+  }, voiceLevelRef, { silenceRef: voiceSilenceRef });
 
   const recording = recorder.state === "recording";
+  React.useImperativeHandle(handleRef, () => ({ finishVoice: recorder.stop }), [recorder.stop]);
 
   const voiceState = recording ? "listening" : transcribing ? "thinking" : "idle";
   React.useEffect(() => {
     onVoiceStateChange?.(voiceState);
   }, [voiceState, onVoiceStateChange]);
   const hasReady = documents.some((d) => d.status === "READY");
-  const canSend = Boolean(prompt.trim()) && !sending && hasReady && !recording && !transcribing;
+  const canSend = Boolean(prompt.trim()) && !sending && !recording && !transcribing;
 
   function submit() {
     if (!canSend) return;
@@ -216,12 +199,10 @@ export function Composer(props: ComposerProps) {
     }
   }
 
-  const minutes = Math.floor(recorder.elapsed / 60);
-  const seconds = String(recorder.elapsed % 60).padStart(2, "0");
   const hint = !documents.length
-    ? "Add a file, link, or note to start asking questions."
+    ? "Ask a question anytime — files, links, and notes are optional."
     : !hasReady
-      ? "Your materials are still being processed. You’ll be able to ask questions as soon as they’re ready."
+      ? "Files are still processing, but you can still ask a question in chat."
       : null;
   const error = voiceError ?? recorder.error;
 
@@ -247,7 +228,7 @@ export function Composer(props: ComposerProps) {
           submit();
         }}
       >
-        {(documents.length > 0 || uploads.length > 0) && (
+        {!recording && !transcribing && (documents.length > 0 || uploads.length > 0) && (
           <ul
             aria-label="Resources in this chat"
             className="mb-2 flex max-h-24 flex-wrap items-center gap-1.5 overflow-y-auto"
@@ -298,229 +279,123 @@ export function Composer(props: ComposerProps) {
         )}
 
         {recording || transcribing ? (
-          <div
-            className={cn(
-              "relative flex min-h-[88px] items-center gap-3 overflow-hidden rounded-2xl border px-3 py-2.5",
-              recording
-                ? "border-destructive/30 bg-gradient-to-r from-destructive/8 via-primary/8 to-primary/12"
-                : "border-primary/20 bg-gradient-to-r from-primary/10 via-primary/8 to-primary/12",
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex shrink-0 items-center gap-2.5">
-              {recording ? (
-                <>
-                  <span className="relative flex size-8 items-center justify-center rounded-full bg-destructive/12 ring-4 ring-destructive/10">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
-                    <span className="relative inline-flex size-3 rounded-full bg-destructive shadow-[0_0_18px_rgba(239,68,68,0.8)]" />
-                  </span>
-                  <span className="w-10 shrink-0 text-sm font-medium tabular-nums text-destructive">
-                    {minutes}:{seconds}
-                  </span>
-                </>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 ring-4 ring-primary/10">
-                    <span className="size-2.5 rounded-full bg-primary animate-pulse" />
-                  </span>
-                  <ShimmeringText
-                    text="Transcribing…"
-                    className="shrink-0 text-sm font-medium"
-                    duration={1.6}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80">
-                <span>{recording ? "Listening" : "Processing"}</span>
-                {recording && <span className="text-destructive">LIVE</span>}
-              </div>
-              <LiveWaveform
-                active={recording}
-                processing={transcribing}
-                mode={recording ? "scrolling" : "static"}
-                height={48}
-                barWidth={5}
-                barGap={3}
-                barRadius={6}
-                fadeEdges
-                className={cn(
-                  "min-w-0 rounded-full text-primary shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)]",
-                  recording && "bg-gradient-to-r from-primary/5 via-primary/15 to-primary/10",
-                  !recording && "bg-gradient-to-r from-primary/8 via-primary/12 to-primary/8",
-                )}
-              />
-            </div>
-          </div>
+          <ListeningView
+            recording={recording}
+            tall={variant === "hero"}
+            levelRef={recorder.levelRef}
+            silenceRef={recorder.silenceRef}
+            onCancel={recorder.cancel}
+            onDone={recorder.stop}
+          />
         ) : (
-          <Textarea
-            ref={textarea}
-            lang={language === "km" ? "km" : undefined}
-            className={cn(
-              "max-h-52 resize-none rounded-none border-none bg-transparent! p-1 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!",
-              variant === "hero" ? "min-h-16 text-base" : "min-h-12 text-[15px]",
-            )}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder="Ask anything about your materials — សួរអ្វីក៏បាន"
-            aria-label="Message"
-            value={prompt}
-          />
-        )}
+          <>
+            <Textarea
+              ref={textarea}
+              lang={hasKhmer(prompt) ? "km" : undefined}
+              className={cn(
+                "max-h-52 resize-none rounded-none border-none bg-transparent! p-1 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!",
+                variant === "hero" ? "min-h-16 text-base" : "min-h-12 text-[15px]",
+              )}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder="Ask anything about your materials — សួរអ្វីក៏បាន"
+              aria-label="Message"
+              value={prompt}
+            />
 
-        <div className="flex items-center gap-1">
-          <input
-            ref={fileInput}
-            className="sr-only"
-            multiple
-            type="file"
-            accept={ACCEPTED_TYPES}
-            tabIndex={-1}
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length) onAttachFiles(files);
-              e.target.value = "";
-            }}
-          />
+          <div className="flex items-center gap-1">
+            <input
+              ref={fileInput}
+              className="sr-only"
+              multiple
+              type="file"
+              accept={ACCEPTED_TYPES}
+              tabIndex={-1}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length) onAttachFiles(files);
+                e.target.value = "";
+              }}
+            />
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  aria-label="Add a resource"
-                  className="rounded-md"
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                  disabled={recording}
-                />
-              }
-            >
-              <IconPlus size={18} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64 rounded-xl p-1.5">
-              <DropdownMenuGroup className="space-y-0.5">
-                <MenuItem
-                  icon={IconPaperclip}
-                  label="Upload files"
-                  hint="PDF, slides, Word, photos, audio, video"
-                  onClick={() => fileInput.current?.click()}
-                />
-                <MenuItem
-                  icon={IconLink}
-                  label="Add a link"
-                  hint="Web page or YouTube video"
-                  onClick={() => setLinkOpen(true)}
-                />
-                <MenuItem
-                  icon={IconNote}
-                  label="Paste text or notes"
-                  onClick={() => setNoteOpen(true)}
-                />
-                <MenuItem
-                  icon={IconBooks}
-                  label="From your library"
-                  hint="Reuse something you added before"
-                  onClick={onOpenLibrary}
-                />
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div
-            role="radiogroup"
-            aria-label="Voice input language"
-            className="ml-1 flex items-center rounded-md bg-muted p-0.5"
-          >
-            {LANGUAGES.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={language === option.value}
-                title={option.title}
-                disabled={recording || transcribing}
-                onClick={() => chooseLanguage(option.value)}
-                className={cn(
-                  "h-6 rounded-sm px-2 text-xs font-medium transition-colors duration-150 ease-out disabled:opacity-60",
-                  language === option.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="ml-auto flex items-center gap-1">
-            {recording ? (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={recorder.cancel}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  aria-label="Stop recording and transcribe"
-                  className="rounded-full"
-                  onClick={recorder.stop}
-                >
-                  <IconPlayerStopFilled size={14} />
-                </Button>
-              </>
-            ) : (
-              <>
-                {recorder.supported && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
                   <Button
-                    aria-label={
-                      transcribing ? "Transcribing voice message" : "Record a voice message"
-                    }
-                    className={cn(
-                      "rounded-md transition-all duration-200",
-                      recorder.state === "requesting" && "bg-primary/10 text-primary",
-                    )}
-                    size="icon"
+                    aria-label="Add a resource"
+                    className="rounded-md"
+                    size="icon-sm"
                     type="button"
                     variant="ghost"
-                    loading={transcribing || recorder.state === "requesting"}
-                    onClick={() => {
-                      setVoiceError(null);
-                      recorder.clearError();
-                      void recorder.start();
-                    }}
-                  >
-                    {!transcribing && recorder.state !== "requesting" && (
-                      <span className="relative flex items-center justify-center">
-                        <span className="absolute inline-flex size-8 rounded-full bg-primary/10" />
-                        <IconMicrophone className="relative text-muted-foreground" size={19} stroke={1.6} />
-                      </span>
-                    )}
-                  </Button>
-                )}
+                    disabled={recording}
+                  />
+                }
+              >
+                <IconPlus size={18} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64 rounded-xl p-1.5">
+                <DropdownMenuGroup className="space-y-0.5">
+                  <MenuItem
+                    icon={IconPaperclip}
+                    label="Upload files"
+                    hint="PDF, slides, Word, photos, audio, video"
+                    onClick={() => fileInput.current?.click()}
+                  />
+                  <MenuItem
+                    icon={IconLink}
+                    label="Add a link"
+                    hint="Web page or YouTube video"
+                    onClick={() => setLinkOpen(true)}
+                  />
+                  <MenuItem
+                    icon={IconNote}
+                    label="Paste text or notes"
+                    onClick={() => setNoteOpen(true)}
+                  />
+                  <MenuItem
+                    icon={IconBooks}
+                    label="From your library"
+                    hint="Reuse something you added before"
+                    onClick={onOpenLibrary}
+                  />
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <div className="ml-auto flex items-center gap-1">
+              {recorder.supported && (
                 <Button
-                  aria-label="Send message"
-                  className="rounded-full transition-[scale,opacity] duration-150 ease-out active:scale-[0.96] disabled:opacity-40"
-                  disabled={!canSend}
-                  loading={sending}
+                  aria-label="Dictate a message"
+                  title="Dictate — Khmer or English, detected automatically"
+                  className="rounded-md text-muted-foreground hover:text-foreground"
                   size="icon"
-                  type="submit"
+                  type="button"
+                  variant="ghost"
+                  loading={recorder.state === "requesting"}
+                  onClick={() => {
+                    setVoiceError(null);
+                    recorder.clearError();
+                    void recorder.start();
+                  }}
                 >
-                  {!sending && <IconArrowUp size={17} />}
+                  {recorder.state !== "requesting" && <IconMicrophone size={19} stroke={1.75} />}
                 </Button>
-              </>
-            )}
+              )}
+              <Button
+                aria-label="Send message"
+                className="rounded-full transition-[scale,opacity] duration-150 ease-out active:scale-[0.96] disabled:opacity-40"
+                disabled={!canSend}
+                loading={sending}
+                size="icon"
+                type="submit"
+              >
+                {!sending && <IconArrowUp size={17} />}
+              </Button>
+            </div>
           </div>
-        </div>
+          </>
+        )}
 
         <div
           aria-hidden
@@ -551,6 +426,62 @@ export function Composer(props: ComposerProps) {
 
       <LinkDialog open={linkOpen} onOpenChange={setLinkOpen} onSubmit={props.onAddLink} />
       <NoteDialog open={noteOpen} onOpenChange={setNoteOpen} onSubmit={props.onAddNote} />
+    </div>
+  );
+}
+
+/**
+ * Voice input in progress: only the orb. The recording ends by itself when the
+ * student stops talking (the orb’s ring closes as the pause lengthens); tapping
+ * the orb or pressing Enter finishes early, Esc cancels. The transcript is appended
+ * to the message for the student to edit and send. On the welcome screen the whole
+ * composer is hidden and the large orb above it does this instead.
+ */
+function ListeningView({
+  recording,
+  tall,
+  levelRef,
+  silenceRef,
+  onCancel,
+  onDone,
+}: {
+  recording: boolean;
+  tall: boolean;
+  levelRef: React.RefObject<number>;
+  silenceRef: React.RefObject<number>;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  React.useEffect(() => {
+    if (!recording) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+      } else if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        onDone();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [recording, onCancel, onDone]);
+
+  return (
+    <div className={cn("flex items-center justify-center", tall ? "min-h-[100px]" : "min-h-[84px]")}>
+      <span className="sr-only" role="status" aria-live="polite">
+        {recording
+          ? "Listening. Stops when you pause. Press Enter to finish or Escape to cancel."
+          : "Transcribing"}
+      </span>
+      <AiOrb
+        state={recording ? "listening" : "thinking"}
+        levelRef={levelRef}
+        silenceRef={silenceRef}
+        onPress={recording ? onDone : undefined}
+        pressLabel="Finish and transcribe"
+        className="size-14"
+      />
     </div>
   );
 }

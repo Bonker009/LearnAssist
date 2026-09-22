@@ -1,20 +1,27 @@
-"""Speech-to-text via faster-whisper.
+"""Speech-to-text: routes each recording to Qwen3-ASR or faster-whisper.
 
-Two models can be in play. The base model (`WHISPER_MODEL`) handles every language
-and does language detection. Khmer gets a dedicated fine-tune (`WHISPER_MODEL_KM`),
-because the stock multilingual checkpoints transcribe Khmer badly enough to make the
-resulting index useless.
+With `SPEECH_BACKEND=qwen` (the default), audio in a language Qwen3-ASR supports is
+transcribed by it (`qwen.py`). Khmer is not among them, so Khmer, and any other
+language Qwen does not cover, stays on Whisper. Whisper's base model (`WHISPER_MODEL`)
+also does the language detection that decides the route, because Qwen cannot detect
+a language it was never trained on. Khmer gets a dedicated Whisper fine-tune
+(`WHISPER_MODEL_KM`), because the stock multilingual checkpoints transcribe Khmer
+badly enough to make the resulting index useless.
+
+`SPEECH_BACKEND=whisper` restores the Whisper-only behaviour.
 """
 
 import asyncio
 import logging
 import threading
+import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import get_settings
 from app.parsers.base import ParseResult
+from app.transcribe import qwen
 from app.transcribe.audio import extract_audio, extract_audio_from_path
 from app.transcribe.windows import Segment, group_segments
 
@@ -89,18 +96,32 @@ def _transcribe_sync(
     on_progress: Callable[[float], None] | None,
     language: str | None = None,
 ) -> Transcript:
-    """Transcribe, switching to the Khmer model when the audio is Khmer.
+    """Transcribe with whichever engine suits the audio's language.
 
-    `transcribe` returns a lazy segment generator but detects the language up front,
-    so checking `info.language` and switching models costs a detection pass, not a
-    wasted transcription.
+    Whisper's `transcribe` returns a lazy segment generator but detects the language
+    up front, so checking `info.language` and then switching model or engine costs a
+    detection pass, not a wasted transcription.
     """
+    use_qwen = get_settings().speech_backend == "qwen"
+    if use_qwen and language in qwen.QWEN_LANGUAGES:
+        # The caller named a language Qwen covers; no detection pass needed.
+        return _transcribe_qwen(path, language, on_progress)
+
     segments, info = _run(_model_for(language), path, language)
+
+    if use_qwen and language is None and info.language in qwen.QWEN_LANGUAGES:
+        logger.info(
+            "Detected %s (p=%.2f); transcribing with Qwen3-ASR",
+            info.language, info.language_probability,
+        )
+        return _transcribe_qwen(path, info.language, on_progress, info.duration)
 
     if language is None and info.language == "km":
         khmer = _model_for("km")
         if khmer != _base_model_name():
-            logger.info("Detected Khmer (p=%.2f); switching to %s", info.language_probability, khmer)
+            logger.info(
+                "Detected Khmer (p=%.2f); switching to %s", info.language_probability, khmer
+            )
             segments, info = _run(khmer, path, "km")
 
     collected: list[Segment] = []
@@ -111,6 +132,19 @@ def _transcribe_sync(
             on_progress(min(segment.end / duration, 1.0))
 
     return Transcript(collected, duration, info.language)
+
+
+def _transcribe_qwen(
+    path: Path,
+    language: str,
+    on_progress: Callable[[float], None] | None,
+    duration: float | None = None,
+) -> Transcript:
+    if not duration:
+        with wave.open(str(path), "rb") as wav:
+            duration = wav.getnframes() / wav.getframerate()
+    segments = qwen.transcribe_path(path, language, duration, on_progress)
+    return Transcript(segments, duration, language)
 
 
 class WhisperTranscriber:
@@ -133,7 +167,7 @@ class WhisperTranscriber:
         self, audio_path: Path, duration: float, on_progress: Callable[[float], None] | None
     ) -> ParseResult:
         try:
-            # faster-whisper is synchronous and CPU-bound; running it inline would
+            # Both engines are synchronous and CPU-bound; running them inline would
             # block the event loop and stall every other request for minutes.
             transcript = await asyncio.to_thread(_transcribe_sync, audio_path, on_progress)
         finally:
@@ -151,17 +185,57 @@ class WhisperTranscriber:
         return result
 
 
+def choose_dictation_language(probs: dict[str, float], min_prob: float) -> str:
+    """Pick a voice message's language: any language, with Khmer as the fallback.
+
+    Whisper's multilingual checkpoints recognise most languages confidently (English,
+    French, Chinese, Vietnamese and Thai at 0.92-1.0 on short clips) but not Khmer,
+    which they mistake for Vietnamese, Thai or English at 0.3-0.87. So a detected
+    language is trusted only when it is confident and far ahead of Khmer; otherwise the
+    clip is Khmer, which is what an uncertain clip from these students most likely is.
+    """
+    khmer = probs.get("km", 0.0)
+    language, probability = max(probs.items(), key=lambda item: item[1], default=("km", 0.0))
+    if language == "km":
+        return "km"
+    return language if probability >= min_prob and probability >= 50 * khmer else "km"
+
+
+def _detect_dictation_language(path: Path) -> str:
+    from faster_whisper import decode_audio
+    from faster_whisper.vad import VadOptions
+
+    model = _load_model(_base_model_name())
+    # Unlike transcribe(), detect_language() takes VadOptions, not a dict.
+    _, _, all_probs = model.detect_language(
+        decode_audio(str(path)),
+        vad_filter=True,
+        vad_parameters=VadOptions(min_silence_duration_ms=500),
+    )
+    probs = dict(all_probs)
+    language = choose_dictation_language(probs, get_settings().dictation_detect_min_prob)
+    top = max(probs, key=probs.get, default="?")
+    logger.info(
+        "Dictation language %s (detected %s p=%.3f, km=%.3f)",
+        language, top, probs.get(top, 0.0), probs.get("km", 0.0),
+    )
+    return language
+
+
 async def transcribe_clip(data: bytes, suffix: str, language: str | None) -> Transcript:
     """Transcribe a short dictation clip into plain text segments.
 
-    @param language "km", "en", or None to detect. Detection on a three-second clip is
-           unreliable, which is why the composer lets the student pick Khmer explicitly.
+    @param language A language code, or None to detect it (see
+           `choose_dictation_language`: any language, falling back to Khmer when
+           detection is unsure, because Whisper misreads Khmer as its neighbours).
     """
     audio_path, duration = await extract_audio(data, suffix)
     try:
         limit = get_settings().dictation_max_seconds
         if duration and duration > limit:
             raise ValueError(f"Voice messages can be at most {int(limit)} seconds long")
+        if language is None:
+            language = await asyncio.to_thread(_detect_dictation_language, audio_path)
         transcript = await asyncio.to_thread(_transcribe_sync, audio_path, None, language)
     finally:
         audio_path.unlink(missing_ok=True)

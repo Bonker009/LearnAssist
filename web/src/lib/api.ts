@@ -6,10 +6,12 @@ import type {
   Conversation,
   Dashboard,
   ConversationSummary,
+  FlashcardDeck,
   Grade,
   LectureDocument,
   Quiz,
   ReaderSnapshot,
+  SlideDeck,
   SpeechLanguage,
   Transcript,
 } from "./types";
@@ -82,6 +84,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function orNullOn404<T>(pending: Promise<T>): Promise<T | null> {
+  try {
+    return await pending;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/** Absolute URL of a path on the API, for things the browser loads itself (iframes). */
+export function apiUrl(path: string): string {
+  return `${BASE_URL}${path}`;
+}
+
 /**
  * Browsers report an empty type for many files (.md almost always), and the API
  * rejects an unknown type. Fill it in from the extension rather than failing an
@@ -145,6 +161,34 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ answers }),
     }),
+
+  // ---------- flashcards ----------
+
+  generateFlashcards: (documentId: string, count = 10) =>
+    request<FlashcardDeck>(`/api/documents/${documentId}/flashcards?count=${count}`, {
+      method: "POST",
+    }),
+
+  /** Resolves to null when the document has no deck yet. */
+  latestFlashcards: (documentId: string) =>
+    orNullOn404(request<FlashcardDeck>(`/api/documents/${documentId}/flashcards/latest`)),
+
+  reviewFlashcard: (cardId: string, known: boolean) =>
+    request<void>(`/api/flashcards/${cardId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ known }),
+    }),
+
+  // ---------- slides ----------
+
+  /** Starts generation; poll `getSlideDeck` until READY or FAILED. */
+  generateSlides: (documentId: string, count = 8) =>
+    request<SlideDeck>(`/api/documents/${documentId}/slides?count=${count}`, { method: "POST" }),
+
+  getSlideDeck: (deckId: string) => request<SlideDeck>(`/api/slide-decks/${deckId}`),
+
+  latestSlides: (documentId: string) =>
+    orNullOn404(request<SlideDeck>(`/api/documents/${documentId}/slides/latest`)),
 
   // ---------- conversations ----------
 

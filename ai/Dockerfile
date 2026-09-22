@@ -12,6 +12,7 @@ RUN apt-get update \
         tesseract-ocr \
         tesseract-ocr-eng \
         tesseract-ocr-khm \
+        sox \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,6 +24,17 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/usr/local \
     PYTHONUNBUFFERED=1
+
+# torch for Qwen3-ASR. The CPU index keeps the image small; build with
+# --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 for a GPU.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --index-url "$TORCH_INDEX_URL" "torch>=2.6"
+
+# A CUDA torch ships cuBLAS and cuDNN as pip packages. Pointing the loader at them lets
+# faster-whisper (CTranslate2) run on the GPU without a CUDA base image. The paths
+# simply don't exist in a CPU build, which is harmless.
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib
 
 # Dependency layer: cached unless pyproject.toml changes.
 COPY pyproject.toml README.md ./

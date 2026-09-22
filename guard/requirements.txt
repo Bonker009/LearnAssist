@@ -1,0 +1,5 @@
+# LLM Guard pins transformers==4.51.3, while Qwen3-ASR in the ai service pins 4.57.6.
+# That clash is why the guardrails live in their own service.
+llm-guard==0.3.16
+fastapi>=0.118
+uvicorn[standard]>=0.37

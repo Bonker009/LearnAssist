@@ -23,10 +23,12 @@ from app.config import get_settings
 from app import cache
 from app.db import dispose_engine, session_scope
 from app.models import (
+    FlashcardRequest,
     IngestRequest,
     QueryRequest,
     QueryResponse,
     QuizRequest,
+    SlidesRequest,
     TranscriptResponse,
 )
 from app.quiz.generate import generate_quiz
@@ -36,6 +38,8 @@ from app.rag.ingest import run_ingest
 from app.transcribe.audio import FfmpegMissing
 from app.transcribe.whisper import join_segments, transcribe_clip
 from app.storage import ensure_bucket
+from app.study.flashcards import Flashcard, generate_flashcards
+from app.study.slides import SlideDeck, generate_slides
 
 import contextvars
 
@@ -145,7 +149,8 @@ async def readiness() -> dict:
         missing = [
             model
             for model in (settings.ollama_chat_model, settings.ollama_embed_model)
-            if model not in installed
+            # Ollama lists an untagged pull as "name:latest".
+            if model not in installed and f"{model}:latest" not in installed
         ]
         checks["ollama"] = "ok" if not missing else f"missing models: {', '.join(missing)}"
     except Exception as exc:  # noqa: BLE001
@@ -201,6 +206,34 @@ async def quiz(request: QuizRequest) -> list[QuizQuestion]:
             detail="Could not generate questions from this document.",
         )
     return questions
+
+
+@app.post("/flashcards", tags=["study"], dependencies=[Depends(require_internal_key)])
+async def flashcards(request: FlashcardRequest) -> list[Flashcard]:
+    """Generate revision flashcards for one document, each bound to its source."""
+    cards = await generate_flashcards(request.document_id, request.count)
+    if not cards:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not generate flashcards from this document.",
+        )
+    return cards
+
+
+@app.post("/slides", tags=["study"], dependencies=[Depends(require_internal_key)])
+async def slides(request: SlidesRequest) -> SlideDeck:
+    """Generate a cited slide outline and the Slidev markdown rendered from it.
+
+    Rendering the deck itself (build and PDF export) is the `slides` service's job;
+    Spring Boot hands it the markdown returned here.
+    """
+    deck = await generate_slides(request.document_id, request.filename, request.count)
+    if deck is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Could not generate slides from this document.",
+        )
+    return deck
 
 
 # Dictation clips are seconds of Opus; this only bounds a malicious upload.

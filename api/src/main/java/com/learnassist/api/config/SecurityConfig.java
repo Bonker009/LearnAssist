@@ -4,6 +4,7 @@ import com.learnassist.api.security.JwtAuthFilter;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -23,7 +24,32 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * The built slide decks, embedded by the web app in an iframe.
+     *
+     * <p>No JWT: an iframe cannot send one, so the unguessable view token in the path is the
+     * capability (see {@code SlideController#view}). Framing is allowed for the web app's
+     * origin only, instead of the default {@code X-Frame-Options: DENY}.
+     */
     @Bean
+    @Order(1)
+    public SecurityFilterChain slideViewChain(HttpSecurity http, AppProperties props)
+            throws Exception {
+        return http
+                .securityMatcher("/api/slides/view/**")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.disable())
+                        .cacheControl(cache -> cache.disable())
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                "frame-ancestors 'self' " + props.corsOrigin())))
+                .build();
+    }
+
+    @Bean
+    @Order(2)
     public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthFilter jwtAuthFilter)
             throws Exception {
         return http

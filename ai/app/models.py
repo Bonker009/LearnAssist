@@ -117,6 +117,18 @@ class QuizRequest(ServiceRequest):
     count: int = Field(default=5, ge=1, le=20)
 
 
+class FlashcardRequest(ServiceRequest):
+    document_id: UUID
+    count: int = Field(default=10, ge=1, le=30)
+
+
+class SlidesRequest(ServiceRequest):
+    document_id: UUID
+    # Shown as the cover slide's subtitle.
+    filename: str = Field(default="", max_length=512)
+    count: int = Field(default=8, ge=3, le=20)
+
+
 class DocumentRef(ServiceRequest):
     id: UUID
     filename: str

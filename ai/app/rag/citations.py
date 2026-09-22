@@ -57,9 +57,11 @@ def resolve_citations(answer: str, blocks: dict[int, Chunk]) -> tuple[str, list[
     cleaned = answer
     for marker in invalid:
         cleaned = cleaned.replace(f"[{marker}]", "")
-    # Removing a marker leaves a double space or a space before punctuation.
-    cleaned = re.sub(r" {2,}", " ", cleaned)
-    cleaned = re.sub(r"\s+([.,;:])", r"\1", cleaned).strip()
+    # Removing a marker leaves a double space or a space before punctuation. Only
+    # spaces within a line are touched: answers are Markdown, where indentation
+    # (nested lists) and line breaks carry meaning.
+    cleaned = re.sub(r"(?<=\S) {2,}", " ", cleaned)
+    cleaned = re.sub(r"[ \t]+([.,;:])", r"\1", cleaned).strip()
 
     return cleaned, list(cited.values())
 

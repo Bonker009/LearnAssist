@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
 
     # Ollama (host-native)
-    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_base_url: str = "http://172.168.5.2:11434"
     ollama_chat_model: str = "qwen2.5:32b-instruct"
     ollama_embed_model: str = "bge-m3"
     embed_dim: int = 1024
@@ -40,12 +40,37 @@ class Settings(BaseSettings):
     max_context_tokens: int = 6000
 
     # --- Speech ---
+    # "qwen": Qwen3-ASR for every language it supports, Whisper for the rest (Khmer
+    # included) and for language detection. "whisper": Whisper only.
+    speech_backend: str = "qwen"
+    qwen_asr_model: str = "Qwen/Qwen3-ASR-0.6B"
+    # "cpu", or "cuda:0" if the container has a GPU (and a CUDA build of torch).
+    qwen_asr_device: str = "cpu"
+    # Audio windows (~30 s each) transcribed per call. Larger helps on a GPU only.
+    qwen_asr_batch_size: int = 4
     # A Khmer fine-tune of Whisper in CTranslate2 format. Used for dictation in Khmer
     # and for any recording Whisper's base model detects as Khmer, because the stock
     # multilingual checkpoints transcribe Khmer poorly. Empty disables the swap.
     whisper_model_km: str = "PhanithLIM/whisper-small-khmer-ct2"
     # A dictation clip is a question, not a lecture; anything longer is a mistake.
     dictation_max_seconds: float = 120.0
+    # Voice messages can be in any language, but Whisper is unreliable on Khmer: it
+    # recognises most languages at 0.92+ yet ranks Khmer speech as Vietnamese, Thai
+    # or English at 0.3-0.87. A detected language is trusted only at this confidence;
+    # below it the clip is treated as Khmer. Lower it if other languages land as Khmer.
+    dictation_detect_min_prob: float = 0.9
+
+    # --- Guardrails (the guard service, LLM Guard) ---
+    # Every chat question is checked before it is answered and every answer before it
+    # is returned. Empty disables the checks (the test suite, a bare local run).
+    guard_url: str = ""
+    # The first scan after the guard starts can wait on its models loading.
+    guard_timeout_seconds: float = 30.0
+    # If the guard is down: True answers anyway (logged), False refuses every
+    # question until it is back. Open by default so an outage degrades to unguarded
+    # rather than to a chat that cannot answer at all; set False where the checks
+    # are a requirement.
+    guard_fail_open: bool = True
 
     # --- OCR ---
     # Tesseract language packs, joined with '+'. Khmer is included so photos of Khmer

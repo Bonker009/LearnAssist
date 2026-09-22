@@ -1,0 +1,28 @@
+# GPU overlay for the ai service: speech-to-text on an NVIDIA GPU.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build ai
+#
+# or set COMPOSE_FILE in .env so plain `docker compose` picks it up (see .env.example).
+# Needs the NVIDIA container runtime (Docker Desktop with WSL2 has it).
+#
+# Qwen3-ASR-0.6B in bf16 plus Whisper small and the Khmer fine-tune in float16 need
+# about 3 GB of VRAM, so a 6 GB card is enough.
+
+services:
+  ai:
+    build:
+      args:
+        # CUDA 12.8 torch. Its bundled cuBLAS/cuDNN also serve faster-whisper
+        # (CTranslate2); see LD_LIBRARY_PATH in ai/Dockerfile.
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu128
+    environment:
+      QWEN_ASR_DEVICE: ${QWEN_ASR_DEVICE:-cuda:0}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      WHISPER_COMPUTE: ${WHISPER_COMPUTE:-float16}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

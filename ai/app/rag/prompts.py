@@ -30,7 +30,14 @@ Rules you must follow:
    match them to the lecture.
 6. The earlier conversation, if shown, is only for understanding what the student is
    referring to. It is not a source: facts must still come from the context blocks.
-7. Be concise. Two to four sentences is usually enough."""
+7. Be concise: a short paragraph for a simple question; a short list when there are
+   several points, steps or questions.
+8. Format with Markdown so the answer is easy to scan: **bold** for key terms,
+   bulleted or numbered lists for several items or steps, a table for comparisons.
+   Use no headings for short answers, and never wrap the answer in a code block.
+   Keep each citation [n] right after the claim it supports, inside the list item or
+   table cell where the claim is. Do not add a separate list of sources at the end.
+   The refusal sentence in rule 3 stays plain text."""
 
 
 _LANGUAGE_INSTRUCTIONS = {

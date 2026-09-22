@@ -93,6 +93,35 @@ public class AiClient {
                 .body(new org.springframework.core.ParameterizedTypeReference<>() {});
     }
 
+    public record FlashcardRequest(UUID documentId, int count) {}
+
+    public record GeneratedCard(String front, String back, Map<String, Object> source,
+            String sourceLabel, String snippet) {}
+
+    public List<GeneratedCard> generateFlashcards(FlashcardRequest request) {
+        return rest.post()
+                .uri("/flashcards")
+                .body(request)
+                .retrieve()
+                .body(new org.springframework.core.ParameterizedTypeReference<>() {});
+    }
+
+    /** @param filename shown on the cover slide */
+    public record SlidesRequest(UUID documentId, String filename, int count) {}
+
+    /**
+     * A cited outline, and the Slidev markdown rendered from it.
+     *
+     * @param slides {@code [{title, bullets, notes, sources: [{source, sourceLabel}]}]}, stored
+     *               as-is for the in-app outline
+     */
+    public record GeneratedSlides(String title, List<Map<String, Object>> slides,
+            String markdown) {}
+
+    public GeneratedSlides generateSlides(SlidesRequest request) {
+        return rest.post().uri("/slides").body(request).retrieve().body(GeneratedSlides.class);
+    }
+
     public QueryResponse query(QueryRequest request) {
         return rest.post().uri("/query").body(request).retrieve().body(QueryResponse.class);
     }

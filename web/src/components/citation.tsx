@@ -2,6 +2,7 @@
 
 import { FileText, Presentation, Play, ScanLine } from "lucide-react";
 import * as React from "react";
+import { Markdown } from "@/components/markdown";
 import { cn } from "@/lib/utils";
 import type { Citation as CitationData, SourceRef } from "@/lib/types";
 
@@ -19,10 +20,11 @@ import type { Citation as CitationData, SourceRef } from "@/lib/types";
  */
 
 function iconFor(source: SourceRef, ocr: boolean) {
-  if (ocr) return ScanLine;
-  if (source.kind === "slide") return Presentation;
-  if (source.kind === "timestamp") return Play;
-  return FileText;
+  const props = { "aria-hidden": true, className: "size-3" } as const;
+  if (ocr) return <ScanLine {...props} />;
+  if (source.kind === "slide") return <Presentation {...props} />;
+  if (source.kind === "timestamp") return <Play {...props} />;
+  return <FileText {...props} />;
 }
 
 export type NavigateHandler = (source: SourceRef, documentId?: string | null) => void;
@@ -42,7 +44,7 @@ function shortName(name: string) {
 }
 
 export function Citation({ citation, onNavigate, documentName, className }: CitationProps) {
-  const Icon = iconFor(citation.source, Boolean(citation.ocr));
+  const icon = iconFor(citation.source, Boolean(citation.ocr));
   const interactive = Boolean(onNavigate);
 
   const describedBy = React.useId();
@@ -64,7 +66,7 @@ export function Citation({ citation, onNavigate, documentName, className }: Cita
         className,
       )}
     >
-      <Icon aria-hidden className="size-3" />
+      {icon}
       {documentName && (
         <span className="max-w-40 truncate opacity-80">{shortName(documentName)} ·</span>
       )}
@@ -99,22 +101,18 @@ export function AnswerWithCitations({
   documentNames?: Map<string, string>;
 }) {
   const byMarker = new Map(citations.map((c) => [c.marker, c]));
-  const parts = content.split(/(\[\d{1,3}\])/g);
   const cited = new Set(citations.map((c) => c.document_id).filter(Boolean));
   const showNames = cited.size > 1;
 
+  // Answers are Markdown (lists, bold, tables); each [n] becomes a chip in place.
   return (
-    <p className="leading-relaxed whitespace-pre-wrap text-text">
-      {parts.map((part, index) => {
-        const match = /^\[(\d{1,3})\]$/.exec(part);
-        if (!match) return <React.Fragment key={index}>{part}</React.Fragment>;
-
-        const citation = byMarker.get(Number(match[1]));
-        if (!citation) return <React.Fragment key={index}>{part}</React.Fragment>;
-
+    <Markdown
+      content={content}
+      renderCitation={(marker) => {
+        const citation = byMarker.get(marker);
+        if (!citation) return `[${marker}]`;
         return (
           <Citation
-            key={index}
             citation={citation}
             onNavigate={onNavigate}
             documentName={
@@ -125,7 +123,7 @@ export function AnswerWithCitations({
             className="mx-0.5"
           />
         );
-      })}
-    </p>
+      }}
+    />
   );
 }

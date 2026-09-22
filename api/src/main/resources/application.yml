@@ -72,6 +72,9 @@ app:
     internal-key: ${APP_AI_INTERNAL_KEY:dev-internal-key-change-me}
     # Local 7B inference is slow; a tight timeout surfaces as a bogus failure.
     timeout-seconds: 600
+  slides:
+    base-url: ${APP_SLIDES_BASE_URL:http://localhost:3030}
+    timeout-seconds: 900
 
 logging:
   # %X{requestId} is populated by RequestIdFilter.

@@ -3,7 +3,7 @@
 import { IconLayoutSidebar, IconPaperclip } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
-import { AiOrb, AiWaves, type OrbState } from "@/components/ai-orb";
+import { AiOrb, type OrbState } from "@/components/ai-orb";
 import { useAuth } from "@/components/auth-provider";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 import type { NavigateHandler } from "@/components/citation";
@@ -14,11 +14,10 @@ import type {
   ConversationSummary,
   LectureDocument,
   SourceRef,
-  SpeechLanguage,
 } from "@/lib/types";
-import { hasKhmer } from "@/lib/utils";
+import { cn, hasKhmer } from "@/lib/utils";
 import { ChatSidebar } from "./chat-sidebar";
-import { Composer, type PendingUpload } from "./composer";
+import { Composer, type ComposerHandle, type PendingUpload } from "./composer";
 import { LibraryDialog } from "./library-dialog";
 import { MessageList } from "./message-list";
 import { ResourcePanel, type ResourcePanelHandle } from "./resource-panel";
@@ -53,10 +52,13 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
   const [sending, setSending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [voiceState, setVoiceState] = React.useState<OrbState>("idle");
   const voiceLevel = React.useRef(0);
+  const voiceSilence = React.useRef(0);
+  const composerHandle = React.useRef<ComposerHandle>(null);
   const panel = React.useRef<ResourcePanelHandle>(null);
 
   // Creating a chat is shared by several actions that can race (drop two files at
@@ -309,8 +311,9 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
     [sending, refreshList],
   );
 
-  const transcribe = React.useCallback(async (clip: Blob, language: SpeechLanguage) => {
-    return (await api.transcribe(clip, language)).text;
+  const transcribe = React.useCallback(async (clip: Blob) => {
+    // The service detects the language and switches to the Khmer model for Khmer.
+    return (await api.transcribe(clip, "auto")).text;
   }, []);
 
   const navigate: NavigateHandler = React.useCallback(
@@ -381,9 +384,14 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
       onDismissUpload={(uploadId) => setUploads((u) => u.filter((x) => x.id !== uploadId))}
       onTranscribe={transcribe}
       voiceLevelRef={voiceLevel}
+      voiceSilenceRef={voiceSilence}
+      handleRef={composerHandle}
       onVoiceStateChange={setVoiceState}
     />
   );
+
+  // Voice input is under way: listening, or transcribing what was said.
+  const voiceActive = voiceState !== "idle";
 
   // The orb listens while the student speaks and thinks while anything is working.
   const orbState: OrbState =
@@ -398,7 +406,11 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
         Skip to chat
       </a>
 
-      <SidebarDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)}>
+      <SidebarDrawer
+        open={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        onClose={() => setSidebarOpen(false)}
+      >
         <ChatSidebar
           conversations={conversations}
           activeId={conversationId}
@@ -414,9 +426,16 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
-            aria-label="Open chats"
-            onClick={() => setSidebarOpen(true)}
+            aria-label={sidebarCollapsed ? "Show chats" : "Hide chats"}
+            title={sidebarCollapsed ? "Show chats" : "Hide chats"}
+            onClick={() => {
+              // A drawer on phones, a column that folds away on wider screens.
+              if (window.matchMedia("(min-width: 48rem)").matches) {
+                setSidebarCollapsed((collapsed) => !collapsed);
+              } else {
+                setSidebarOpen(true);
+              }
+            }}
           >
             <IconLayoutSidebar size={18} />
           </Button>
@@ -441,18 +460,23 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
 
         {empty ? (
           <div className="relative flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-16">
-            <AiWaves
-              state={orbState}
-              levelRef={voiceLevel}
-              className="absolute inset-x-0 bottom-0 h-32 sm:h-40"
-            />
             <div className="relative flex w-full max-w-2xl flex-col gap-6">
               <AiOrb
                 state={orbState}
                 levelRef={voiceLevel}
-                className="mx-auto size-28 sm:size-32"
+                silenceRef={voiceSilence}
+                // While the student speaks, this orb is the one listening: tapping
+                // it finishes early.
+                onPress={
+                  voiceState === "listening" ? () => composerHandle.current?.finishVoice() : undefined
+                }
+                pressLabel="Finish and transcribe"
+                className={cn(
+                  "mx-auto transition-[width,height] duration-300 ease-out",
+                  voiceActive ? "size-40 sm:size-48" : "size-28 sm:size-32",
+                )}
               />
-              <div className="-mt-2 text-center">
+              <div hidden={voiceActive} className="relative -mt-2 text-center">
                 {/* Bilingual title: Khmer display line, English subtitle in the accent. */}
                 
                 <p className="mt-1 text-base font-semibold text-emphasis sm:text-lg">
@@ -460,13 +484,15 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
                 </p>
                 
               </div>
-              {composer}
+              {/* Hidden, not unmounted, while the student speaks: the recording lives
+                  in the composer, and only the orb should be on screen. */}
+              <div hidden={voiceActive}>{composer}</div>
               {error && (
                 <p role="alert" className="text-center text-sm text-danger">
                   {error}
                 </p>
               )}
-              {documents.some((d) => d.status === "READY") && (
+              {!voiceActive && documents.some((d) => d.status === "READY") && (
                 <div className="flex flex-wrap justify-center gap-2">
                   {SUGGESTIONS.map((suggestion) => (
                     <Button
@@ -485,7 +511,8 @@ export function ChatApp({ initialConversationId }: { initialConversationId?: str
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* `relative`: see the scroller in resource-panel.tsx. */}
+            <div className="relative min-h-0 flex-1 overflow-y-auto">
               {loadingChat ? (
                 <p className="p-8 text-center text-sm text-text-muted">Loading chat…</p>
               ) : (

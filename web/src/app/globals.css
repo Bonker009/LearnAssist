@@ -414,7 +414,7 @@
 }
 
 /* ============================================================================
-   AI PRESENCE — the glow (AiOrb) and waves (AiWaves).
+   AI PRESENCE — the glow (AiOrb).
    State arrives as data-state; the live mic level as --ai-level (0..1).
    ========================================================================= */
 @property --ai-angle {
@@ -435,10 +435,6 @@
 @keyframes ai-pulse {
   0%, 100% { scale: 0.9;  opacity: 0.85; }
   50%      { scale: 1.08; opacity: 1; }
-}
-
-@keyframes ai-slide {
-  to { translate: -50% 0; }
 }
 
 @keyframes ai-float {
@@ -518,41 +514,33 @@
     scale: calc(1 + var(--ai-level) * 0.25);
   }
 
-  .ai-waves {
-    --ai-level: 0;
-    --ai-wave-speed: 1;
-    /* Fade in from the top so the waves rise out of the page instead of sitting
-       on it as a solid band. */
-    mask-image: linear-gradient(to bottom, transparent 0%, #000 65%);
+  /* Auto-stop on silence: a ring closes around the orb and the glow settles, so the
+     student can see the recording is about to end and keep talking to hold it. */
+  .ai-orb {
+    --ai-silence: 0;
   }
-  .ai-waves[data-state="thinking"]  { --ai-wave-speed: 0.45; }
-  .ai-waves[data-state="listening"] { --ai-wave-speed: 0.6; }
-
-  .ai-wave {
+  .ai-orb[data-state="listening"] .ai-orb-body {
+    opacity: calc(1 - var(--ai-silence) * 0.3);
+  }
+  .ai-orb-ring {
     position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 200%;
-    height: 100%;
-    transform-origin: bottom;
-    transform: scaleY(calc(0.7 + var(--ai-level) * 0.9));
-    transition: transform 150ms ease-out;
+    inset: -8%;
+    rotate: -90deg;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0;
   }
-  .ai-wave path { stroke: none; }
-  .ai-wave-1 {
-    opacity: 0.16;
-    fill: var(--color-ai-1);
-    animation: ai-slide calc(18s * var(--ai-wave-speed)) linear infinite;
+  .ai-orb-ring circle {
+    fill: none;
+    stroke: var(--color-primary);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: var(--ai-ring);
+    stroke-dashoffset: calc(var(--ai-ring) * (1 - var(--ai-silence)));
   }
-  .ai-wave-2 {
-    opacity: 0.12;
-    fill: var(--color-ai-3);
-    animation: ai-slide calc(26s * var(--ai-wave-speed)) linear infinite reverse;
-  }
-  .ai-wave-3 {
-    opacity: 0.1;
-    fill: var(--color-ai-4);
-    animation: ai-slide calc(34s * var(--ai-wave-speed)) linear infinite;
+  .ai-orb[data-state="listening"] .ai-orb-ring {
+    opacity: min(1, calc(var(--ai-silence) * 4));
   }
 }
 
@@ -560,8 +548,7 @@
   .ai-orb,
   .ai-orb-bloom,
   .ai-orb-body,
-  .ai-orb-sparkle,
-  .ai-wave {
+  .ai-orb-sparkle {
     animation: none !important;
   }
 }

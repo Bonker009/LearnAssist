@@ -246,3 +246,47 @@ export interface Grade {
   total: number;
   questions: GradedQuestion[];
 }
+
+// ---------- flashcards and slides (StudyDtos.java) ----------
+
+export interface Flashcard {
+  id: string;
+  position: number;
+  front: string;
+  back: string;
+  source: SourceRef;
+  sourceLabel: string;
+  snippet: string;
+  /** Latest self-grade: true "knew it", false "again", null never studied. */
+  known: boolean | null;
+}
+
+export interface FlashcardDeck {
+  id: string;
+  documentId: string;
+  createdAt: string;
+  cards: Flashcard[];
+}
+
+export type SlideDeckStatus = "GENERATING" | "RENDERING" | "READY" | "FAILED";
+
+export interface OutlineSlide {
+  title: string;
+  bullets: string[];
+  notes: string;
+  sources: { source: SourceRef; sourceLabel: string }[];
+}
+
+export interface SlideDeck {
+  id: string;
+  documentId: string;
+  status: SlideDeckStatus;
+  title: string;
+  slides: OutlineSlide[];
+  error: string | null;
+  /** Path on the API, e.g. /api/slides/view/{token}/. Null until READY. */
+  viewPath: string | null;
+  pdfUrl: string | null;
+  markdownUrl: string | null;
+  createdAt: string;
+}

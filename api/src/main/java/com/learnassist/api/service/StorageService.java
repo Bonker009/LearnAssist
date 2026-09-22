@@ -99,6 +99,44 @@ public class StorageService {
     }
 
     /**
+     * As {@link #presignDownload(String)}, but the browser saves the file as
+     * {@code downloadName} instead of opening it or naming it after the storage key.
+     */
+    public String presignDownload(String storageKey, String downloadName) {
+        GetObjectRequest get = GetObjectRequest.builder()
+                .bucket(props.s3().bucket())
+                .key(storageKey)
+                .responseContentDisposition("attachment; filename=\"" + downloadName + "\"")
+                .build();
+
+        return presigner.presignGetObject(GetObjectPresignRequest.builder()
+                        .signatureDuration(props.s3().presignExpiry())
+                        .getObjectRequest(get)
+                        .build())
+                .url()
+                .toString();
+    }
+
+    /**
+     * Open an object for streaming, or empty if it does not exist. The caller must close it.
+     *
+     * <p>For the built slide sites, whose files are small but many: presigning each asset is
+     * not possible, because the built HTML references them by fixed paths.
+     */
+    public java.util.Optional<software.amazon.awssdk.core.ResponseInputStream<
+            software.amazon.awssdk.services.s3.model.GetObjectResponse>> openObject(
+            String storageKey) {
+        try {
+            return java.util.Optional.of(client.getObject(GetObjectRequest.builder()
+                    .bucket(props.s3().bucket())
+                    .key(storageKey)
+                    .build()));
+        } catch (S3Exception e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    /**
      * Read a small object whole, or empty if it does not exist.
      *
      * <p>Only for derived artefacts measured in kilobytes (the reader snapshot). Lecture files are

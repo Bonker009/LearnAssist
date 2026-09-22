@@ -3,7 +3,9 @@
 import { IconArrowLeft, IconX } from "@tabler/icons-react";
 import * as React from "react";
 import type { NavigateHandler } from "@/components/citation";
+import { FlashcardsPanel } from "@/components/flashcards-panel";
 import { QuizPanel } from "@/components/quiz-panel";
+import { SlidesPanel } from "@/components/slides-panel";
 import { SourceViewer, type SourceViewerHandle } from "@/components/source-viewer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -100,7 +102,11 @@ export const ResourcePanel = React.forwardRef<
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      {/* `relative` keeps absolutely positioned content (sr-only legends in the quiz)
+          inside this scroller; otherwise it is placed against the page, makes the
+          document taller than the viewport, and focusing a quiz answer scrolls the
+          whole app out of view. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto p-4">
         {!selected ? (
           documents.length === 0 ? (
             <p className="text-sm text-text-muted">
@@ -159,6 +165,12 @@ export const ResourcePanel = React.forwardRef<
               <TabsTrigger value="quiz" disabled={selected.status !== "READY"}>
                 Quiz
               </TabsTrigger>
+              <TabsTrigger value="cards" disabled={selected.status !== "READY"}>
+                Cards
+              </TabsTrigger>
+              <TabsTrigger value="slides" disabled={selected.status !== "READY"}>
+                Slides
+              </TabsTrigger>
             </TabsList>
 
             {/* Kept mounted so a citation can seek media that is already playing. */}
@@ -187,6 +199,14 @@ export const ResourcePanel = React.forwardRef<
 
             <TabsContent value="quiz" className="pt-2">
               <QuizPanel documentId={selected.id} onNavigate={navigate} />
+            </TabsContent>
+
+            <TabsContent value="cards" className="pt-2">
+              <FlashcardsPanel documentId={selected.id} onNavigate={navigate} />
+            </TabsContent>
+
+            <TabsContent value="slides" className="pt-2">
+              <SlidesPanel documentId={selected.id} onNavigate={navigate} />
             </TabsContent>
           </Tabs>
         )}

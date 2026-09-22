@@ -1,7 +1,7 @@
 # LearnAssist — AI-Powered Learning Assistant
 
 Turn lecture slides, documents and recordings into summaries, grounded answers and
-practice quizzes — where **every AI answer cites the exact slide, page or timestamp
+practice quizzes, flashcards and Slidev presentations — where **every AI answer cites the exact slide, page or timestamp
 it came from**.
 
 An uncited answer from a language model is indistinguishable from a hallucination,
@@ -19,11 +19,12 @@ built around.
 | 1 | PDF → summary → cited Q&A | **Done** (needs Ollama to run end to end) |
 | 1b | Design system, citation UI | **Done** |
 | 2 | PowerPoint and Word parsers | **Done** |
-| 3 | Audio/video via Whisper + FFmpeg | **Done** |
+| 3 | Audio/video via Qwen3-ASR / Whisper + FFmpeg | **Done** |
 | 4 | OCR fallback for scanned pages | **Done** |
 | 5 | Quiz generation | **Done** |
 | 6 | Caching, rate limiting, hardening | **Done** |
 | 7 | Chat interface, links/images/notes, Khmer voice input | **Done** (needs Docker to run end to end) |
+| 8 | Flashcards and Slidev slide decks | **Done** |
 
 ---
 
@@ -148,6 +149,15 @@ synthesises speech with `espeak-ng`, transcribes it with Whisper and asserts the
 spoken terms come back with usable timestamps. Skip the heavy ones with
 `-m 'not slow'`.
 
+Speech goes to [Qwen3-ASR-0.6B](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) for the 30
+languages it supports (`SPEECH_BACKEND=qwen`, the default). Khmer is not one of them, so
+Khmer, and any other language it does not cover, stays on Whisper, which also detects the
+language that picks the route. Qwen3-ASR returns no timestamps, so `transcribe/qwen.py`
+cuts the audio into ~30 s windows at pauses and times each window by its position.
+`SPEECH_BACKEND=whisper` goes back to Whisper only.
+With an NVIDIA GPU, add `docker-compose.gpu.yml` (a CUDA torch build, a GPU
+reservation, and both engines on `cuda`). The simplest way is `COMPOSE_FILE` in `.env`;
+see `.env.example`. About 3 GB of VRAM is enough.
 Whisper is configured by `WHISPER_MODEL` / `WHISPER_DEVICE` / `WHISPER_COMPUTE`.
 `tiny` makes local iteration much faster; `small` + `int8` is the CPU default.
 
@@ -163,13 +173,15 @@ api/                Spring Boot 4.1, Java 25, JPA + Flyway
   .../web           controllers, DTOs, error handling
 ai/                 FastAPI, Python 3.12
   app/parsers       one parser per input format -> ParsedUnit
-  app/transcribe    ffmpeg extraction, Whisper, transcript windowing
+  app/transcribe    ffmpeg extraction, Qwen3-ASR, Whisper, transcript windowing
   app/ocr           fallback for pages with no text layer
   app/chunking      splitter; never crosses a source boundary
   app/embeddings    EmbeddingProvider interface + Ollama impl
   app/llm           LLMProvider interface + Ollama impl
   app/rag           ingest, retrieve, prompts, citation resolution
   app/quiz          stratified sampling, generation, validation
+  app/study         flashcards; slide outlines and the Slidev markdown renderer
+slides/             Node: `slidev build` + `slidev export` (PDF) into RustFS
 web/                Next.js 16, Tailwind v4
   src/app/globals.css           three-layer design tokens
   src/components/citation.tsx   the signature UI primitive
@@ -249,8 +261,8 @@ library without being processed again.
 |---|---|---|
 | PDF | PyMuPDF, OCR fallback | the page, in the browser's PDF viewer |
 | PowerPoint / Word | python-pptx / python-docx | the slide or section, in the text reader |
-| Audio / video | FFmpeg + Whisper | the timestamp, in the player |
-| YouTube link | yt-dlp (audio only, never stored) + Whisper | the timestamp, in the embedded video |
+| Audio / video | FFmpeg + Qwen3-ASR (Whisper for Khmer) | the timestamp, in the player |
+| YouTube link | yt-dlp (audio only, never stored) + Qwen3-ASR / Whisper | the timestamp, in the embedded video |
 | Web page link | safe fetch + trafilatura, HTML snapshot kept | the section, in the text reader |
 | Photo / screenshot | Tesseract (`eng+khm`) | the image and its OCR text |
 | Pasted notes, .txt, .md | split by Markdown heading or paragraph | the section, in the text reader |
@@ -273,8 +285,9 @@ another student's rows.
 ### Khmer
 
 - **Voice input.** The mic records in the browser and sends the clip to
-  `POST /api/speech/transcribe`, which runs Whisper in the AI container. The composer
-  has a ខ្មែរ / EN / Auto switch; with ខ្មែរ, `WHISPER_MODEL_KM`
+  `POST /api/speech/transcribe`, which runs speech-to-text in the AI container (Qwen3-ASR for EN, Whisper for ខ្មែរ). There is no
+  language switch: the language is detected from the clip, and when it is Khmer,
+  `WHISPER_MODEL_KM`
   ([PhanithLIM/whisper-small-khmer-ct2](https://huggingface.co/PhanithLIM/whisper-small-khmer-ct2),
   ~8.9% CER on FLEURS) is used instead of the stock model, which handles Khmer poorly.
   The browser Web Speech API was not used: its Khmer support is Chrome-only and
@@ -325,6 +338,23 @@ The first Khmer voice message downloads the Khmer model (~250 MB) into the
 - **The rate limiter is in-memory, so it is per-instance.** Correct at one replica,
   wrong at two — a user would get double the budget. Move the counter to Redis
   before scaling out.
+- **Slide decks: the model writes a JSON outline, never markdown.** Each slide cites
+  numbered blocks, which are validated like quiz sources, and `app/study/slides.py`
+  renders the Slidev file. Every piece of model text is HTML-escaped, has its markdown
+  punctuation turned into entities, and is wrapped in `<span v-pre>`. Slidev compiles
+  markdown into Vue templates, so unescaped model text could run `{{ }}` expressions
+  or inject HTML into the student's browser.
+- **The built deck is served without a JWT**, at `/api/slides/view/{view_token}/`,
+  because an iframe cannot send one. The token is 256 random bits stored beside the
+  deck (not the deck id), the route serves only a READY deck's own `site/` files,
+  and framing is allowed for `APP_CORS_ORIGIN` only. Treat the link as the deck's
+  password. Anyone who has it can view that deck.
+- **Slide generation runs on the API's executor.** A restart abandons it, so decks
+  still GENERATING/RENDERING at boot are marked FAILED. Single replica, like the rate
+  limiter.
+- **The slides image must not set `NODE_ENV=production`.** `slidev export` renders
+  through a Vite dev server, and a production-mode Vue never mounts there. The export
+  then times out waiting for a hidden `<body>`.
 - **The quiz answer key lives only in `GradeResponse`.** `QuestionResponse` has no
   `correctIndex` or `explanation` field at all. That omission is the control:
   suppressing the fields with `@JsonIgnore` on the entity would leave the answer key

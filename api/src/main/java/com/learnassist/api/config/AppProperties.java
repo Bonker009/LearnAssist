@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Strongly-typed binding for the {@code app.*} configuration tree.
  */
 @ConfigurationProperties(prefix = "app")
-public record AppProperties(String corsOrigin, Jwt jwt, S3 s3, Ai ai) {
+public record AppProperties(String corsOrigin, Jwt jwt, S3 s3, Ai ai, Slides slides) {
 
     public record Jwt(String secret, long expiryMinutes) {
         public Duration expiry() {
@@ -37,6 +37,18 @@ public record AppProperties(String corsOrigin, Jwt jwt, S3 s3, Ai ai) {
     }
 
     public record Ai(String baseUrl, String internalKey, long timeoutSeconds) {
+        public Duration timeout() {
+            return Duration.ofSeconds(timeoutSeconds);
+        }
+    }
+
+    /**
+     * The Slidev render service. It shares the AI service's internal key.
+     *
+     * @param timeoutSeconds covers {@code slidev build} and the PDF export, which runs a
+     *                       headless Chromium over every slide
+     */
+    public record Slides(String baseUrl, long timeoutSeconds) {
         public Duration timeout() {
             return Duration.ofSeconds(timeoutSeconds);
         }

@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 SAMPLE_MULTIPLIER = 2
 
 
-async def generate_quiz(document_id: UUID, count: int = 5) -> list[QuizQuestion]:
+async def load_document_chunks(document_id: UUID) -> list[Chunk]:
+    """Every chunk of one document, in reading order.
+
+    Shared by the quiz, flashcard and slide generators, which all sample from the
+    whole document rather than from a retrieval query.
+    """
     async with session_scope() as session:
         rows = (
             await session.execute(
@@ -31,11 +36,14 @@ async def generate_quiz(document_id: UUID, count: int = 5) -> list[QuizQuestion]
                 .order_by(chunks_table.c.ordinal)
             )
         ).all()
+    return [_row_to_chunk(row) for row in rows]
 
-    if not rows:
+
+async def generate_quiz(document_id: UUID, count: int = 5) -> list[QuizQuestion]:
+    chunks = await load_document_chunks(document_id)
+    if not chunks:
         return []
 
-    chunks = [_row_to_chunk(row) for row in rows]
     sampled = stratified_sample(chunks, count * SAMPLE_MULTIPLIER)
 
     blocks = {marker: chunk for marker, chunk in enumerate(sampled, start=1)}

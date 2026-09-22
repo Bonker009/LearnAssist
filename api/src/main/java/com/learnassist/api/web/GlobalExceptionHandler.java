@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -49,6 +50,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException e,
             HttpServletRequest req) {
         return body(HttpStatus.BAD_REQUEST, e.getMessage(), req);
+    }
+
+    /**
+     * No controller matches. Without this, the catch-all below reports a mistyped or not yet
+     * deployed route as a 500 "Unexpected error", which sends the reader to the server logs
+     * for what is really a 404.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoRoute(NoResourceFoundException e,
+            HttpServletRequest req) {
+        return body(HttpStatus.NOT_FOUND, "Not found", req);
     }
 
     /**

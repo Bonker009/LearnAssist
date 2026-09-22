@@ -2,7 +2,7 @@
 
 import logging
 
-from app import cache
+from app import cache, guard
 from app.db import session_scope
 from app.embeddings.ollama import get_embedding_provider
 from app.lang import detect_language
@@ -30,6 +30,14 @@ def retrieval_query(question: str, history: list[Turn]) -> str:
 async def answer_question(request: QueryRequest) -> QueryResponse:
     language = detect_language(request.question)
     document_ids = request.document_ids
+
+    # Guardrail on the way in: before the cache, retrieval or the model see it.
+    verdict = await guard.check_question(request.question)
+    if not verdict.allowed:
+        logger.warning("Question blocked by guard (%s)", ", ".join(verdict.flagged))
+        return QueryResponse(
+            answer=guard.blocked_question_message(language), citations=[], grounded=False
+        )
 
     # Only a chat's first question is cacheable: with history, the same words can
     # mean something different ("explain that again").
@@ -81,6 +89,14 @@ async def answer_question(request: QueryRequest) -> QueryResponse:
         # authoritative is worse than an honest "not covered".
         logger.info("Ungrounded answer for documents %s", document_ids)
         return QueryResponse(answer=not_covered_message(language), citations=[], grounded=False)
+
+    # Guardrail on the way out, before the answer is cached or shown.
+    verdict = await guard.check_answer(request.question, answer)
+    if not verdict.allowed:
+        logger.warning("Answer blocked by guard (%s)", ", ".join(verdict.flagged))
+        return QueryResponse(
+            answer=guard.blocked_answer_message(language), citations=[], grounded=False
+        )
 
     response = QueryResponse(answer=answer, citations=citations, grounded=True)
     # Only grounded answers are cached. A refusal is often the result of a transient
